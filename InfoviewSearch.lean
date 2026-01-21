@@ -1,1 +1,1 @@
-import InfoviewSearch.Basic
+import InfoviewSearch.InfoviewSearch
