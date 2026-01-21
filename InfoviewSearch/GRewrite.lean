@@ -38,13 +38,16 @@ def addGRewriteEntry (name : Name) (cinfo : ConstantInfo) :
   let .app (.app _ lhs) rhs := e | return []
   let mut result := []
   unless isBadMatch lhs do
-    result := ({ name := .const name, symm := false, relName }, ← initializeLazyEntryWithEta lhs) :: result
+    result :=
+      ({ name := .const name, symm := false, relName }, ← initializeLazyEntryWithEta lhs) :: result
   unless isBadMatch rhs do
-    result := ({ name := .const name, symm := true, relName }, ← initializeLazyEntryWithEta rhs) :: result
+    result :=
+      ({ name := .const name, symm := true, relName }, ← initializeLazyEntryWithEta rhs) :: result
   return result
 
 /-- Try adding the local hypothesis to the `RefinedDiscrTree`. -/
-def addLocalGRewriteEntry (decl : LocalDecl) : MetaM (List (GRewriteLemma × List (Key × LazyEntry))) :=
+def addLocalGRewriteEntry (decl : LocalDecl) :
+    MetaM (List (GRewriteLemma × List (Key × LazyEntry))) :=
   withReducible do
   let (_, _, e) ← forallMetaTelescope decl.type
   let .app (.app f lhs) rhs ← instantiateMVars e | return []
@@ -54,7 +57,8 @@ def addLocalGRewriteEntry (decl : LocalDecl) : MetaM (List (GRewriteLemma × Lis
     ({ name := .fvar decl.fvarId, symm := false, relName }, ← initializeLazyEntryWithEta lhs),
     ({ name := .fvar decl.fvarId, symm := true, relName }, ← initializeLazyEntryWithEta rhs)]
 
-initialize importedRewriteLemmasExt : EnvExtension (IO.Ref (Option (RefinedDiscrTree GRewriteLemma))) ←
+initialize importedRewriteLemmasExt :
+    EnvExtension (IO.Ref (Option (RefinedDiscrTree GRewriteLemma))) ←
   registerEnvExtension (IO.mkRef none)
 
 structure GRewritePos where
@@ -65,7 +69,8 @@ structure GRewritePos where
 /-- Get all potential rewrite lemmas from the imported environment.
 By setting the `librarySearch.excludedModules` option, all lemmas from certain modules
 can be excluded. -/
-def getImportCandidates (e : Expr) (gpos : Option Grw.GRewritePos) : MetaM (MatchResult GRewriteLemma) := do
+def getImportCandidates (e : Expr) (gpos : Option Grw.GRewritePos) :
+    MetaM (MatchResult GRewriteLemma) := do
   unless gpos.isSome do
     return {}
   findImportMatches importedRewriteLemmasExt addGRewriteEntry
@@ -81,7 +86,8 @@ def getImportCandidates (e : Expr) (gpos : Option Grw.GRewritePos) : MetaM (Matc
 
 /-- Get all potential rewrite lemmas from the current file. Exclude lemmas from modules
 in the `librarySearch.excludedModules` option. -/
-def getModuleCandidates (e : Expr) (parentDecl? : Option Name) : MetaM (MatchResult GRewriteLemma) := do
+def getModuleCandidates (e : Expr) (parentDecl? : Option Name) :
+    MetaM (MatchResult GRewriteLemma) := do
   let moduleTreeRef ← createModuleTreeRef fun name cinfo ↦
     if name == parentDecl? then return [] else addGRewriteEntry name cinfo
   findModuleMatches moduleTreeRef e
@@ -159,10 +165,12 @@ structure Rewrite extends GRewriteLemma where
   info : RewriteInfo
   justLemmaName : Bool
 
+set_option linter.style.emptyLine false in
 /-- If `thm` can be used to rewrite `e`, return the rewrite.
 HACK: the `name` argument is set to `FVarId.name` in the local rewrite case.
 This works conveniently. -/
-def checkGRewrite (lem : GRewriteLemma) (e : Expr) (gpos : GRewritePos) (pos : ExprWithPos) : MetaM (Option Rewrite) := withReducible do
+def checkGRewrite (lem : GRewriteLemma) (e : Expr) (gpos : GRewritePos) (pos : ExprWithPos) :
+    MetaM (Option Rewrite) := withReducible do
   unless lem.relName == gpos.relName && lem.symm == gpos.symm do
     return none
   let thm ← match lem.name with
@@ -185,14 +193,16 @@ def checkGRewrite (lem : GRewriteLemma) (e : Expr) (gpos : GRewritePos) (pos : E
   -- instead of just not showing the suggestion.
   if lhs.toHeadIndex != e.toHeadIndex || lhs.headNumArgs != e.headNumArgs then
     return none
-  try synthAppInstances `infoview_suggest default mvars binderInfos false false catch _ => return none
+  try synthAppInstances `infoview_suggest default mvars binderInfos false false
+  catch _ => return none
   let mut extraGoals := #[]
   for mvar in mvars, bi in binderInfos do
     unless ← mvar.mvarId!.isAssigned do
       extraGoals := extraGoals.push (mvar.mvarId!, bi)
 
   let replacement ← instantiateMVars rhs
-  let makesNewMVars ← pure (replacement.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome <||>
+  let makesNewMVars ←
+    pure (replacement.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome <||>
     extraGoals.anyM fun goal ↦ do
       let type ← instantiateMVars <| ← goal.1.getType
       return (type.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome
@@ -206,7 +216,8 @@ def checkGRewrite (lem : GRewriteLemma) (e : Expr) (gpos : GRewritePos) (pos : E
     name := lem.name.toString
     replacement := ← abstractMVars replacement
   }
-  return some { lem with proof, replacement, extraGoals, makesNewMVars, isRefl, info, justLemmaName }
+  return some
+    { lem with proof, replacement, extraGoals, makesNewMVars, isRefl, info, justLemmaName }
 
 def RewriteInfo.lt (a b : RewriteInfo) : Bool :=
   Ordering.isLT <|
@@ -292,8 +303,8 @@ where
 Note: we use two `try`-`catch` clauses, because we rely on `ppConstTagged`
 in the first `catch` branch, which could (in principle) throw an error again.
 -/
-def generateSuggestion (expr : Expr) (pasteInfo : RwPasteInfo) (gpos : GRewritePos) (pos : ExprWithPos) (lem : GRewriteLemma) :
-    MetaM <| Task (Except Html <| Option RwResult) := do
+def generateSuggestion (expr : Expr) (pasteInfo : RwPasteInfo) (gpos : GRewritePos)
+    (pos : ExprWithPos) (lem : GRewriteLemma) : MetaM <| Task (Except Html <| Option RwResult) := do
   BaseIO.asTask <| EIO.catchExceptions (← dropM do withCurrHeartbeats do
     have : MonadExceptOf _ MetaM := MonadAlwaysExcept.except
     try .ok <$> withNewMCtxDepth do
@@ -303,7 +314,8 @@ def generateSuggestion (expr : Expr) (pasteInfo : RwPasteInfo) (gpos : GRewriteP
     catch e => withCurrHeartbeats do
       return .error
         <li>
-          An error occurred when processing generalized rewrite lemma <InteractiveCode fmt={← ppPremiseTagged lem.name}/>:
+          An error occurred when processing generalized rewrite lemma
+          <InteractiveCode fmt={← ppPremiseTagged lem.name}/>:
           <br/>
           <InteractiveMessage msg={← WithRpcRef.mk e.toMessageData} />
         </li>)
@@ -366,7 +378,8 @@ def renderSection (filter : Bool) (s : SectionState) : Option Html := do
   let suffix := if s.pending.isEmpty then suffix else suffix ++ " ⏳"
   let htmls := if filter then s.results.filterMap (·.filtered) else s.results.map (·.unfiltered)
   guard (!htmls.isEmpty)
-  return mkListElement htmls <span> grw: <InteractiveCode fmt={head.pattern}/> {.text suffix} </span>
+  return mkListElement htmls
+    <span> grw: <InteractiveCode fmt={head.pattern}/> {.text suffix} </span>
 
 /-- When the rewrite results are computed, `WidgetState` is used to keep track of the progress.
 Initially, it contains a bunch of unfinished `Task`s, and with each round of `updateWidgetState`,
@@ -389,7 +402,8 @@ def updateWidgetState (state : WidgetState) : MetaM WidgetState := do
     exceptions := exceptions ++ exs
   return { state with sections, exceptions }
 
-def renderWidget (state : WidgetState) (unfolds? : Option Html) (rewriteTarget : CodeWithInfos) : Html :=
+def renderWidget (state : WidgetState) (unfolds? : Option Html)
+    (rewriteTarget : CodeWithInfos) : Html :=
   <FilterDetails
     summary={state.header}
     all={render false state unfolds? rewriteTarget}
@@ -397,7 +411,8 @@ def renderWidget (state : WidgetState) (unfolds? : Option Html) (rewriteTarget :
     initiallyFiltered={true} />
 where
   /-- Render all of the sections of rewrite results -/
-  render (filter : Bool) (state : WidgetState) (unfolds? : Option Html) (rewriteTarget : CodeWithInfos) : Html :=
+  render (filter : Bool) (state : WidgetState) (unfolds? : Option Html)
+      (rewriteTarget : CodeWithInfos) : Html :=
     let htmls := state.sections.filterMap (renderSection filter)
     let htmls := match unfolds? with
       | some html => #[html] ++ htmls
@@ -409,7 +424,6 @@ where
       <p> No rewrites found for <InteractiveCode fmt={rewriteTarget}/> </p>
     else
       .element "div" #[("style", json% {"marginLeft" : "4px"})] htmls
-
   /-- Render the error messages -/
   renderExceptions (exceptions : Array Html) : Option Html := do
     if exceptions.isEmpty then none else

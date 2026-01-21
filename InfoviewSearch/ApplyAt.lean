@@ -4,10 +4,9 @@ public import InfoviewSearch.Util
 
 public meta section
 
-namespace InfoviewSuggest
+namespace InfoviewSuggest.ApplyAt
 open Lean Meta RefinedDiscrTree Widget Server ProofWidgets Jsx
 
-namespace ApplyAt
 
 structure ApplyAtLemma where
   name : Premise
@@ -39,7 +38,8 @@ initialize importedApplyLemmasExt : EnvExtension (IO.Ref (Option (RefinedDiscrTr
 /-- Get all potential apply lemmas from the imported environment.
 By setting the `librarySearch.excludedModules` option, all lemmas from certain modules
 can be excluded. -/
-def getImportCandidates (expr : ExprWithPos) (hyp? : Option FVarId) : MetaM (MatchResult ApplyAtLemma) := do
+def getImportCandidates (expr : ExprWithPos) (hyp? : Option FVarId) :
+    MetaM (MatchResult ApplyAtLemma) := do
   unless expr.targetPos == .root && hyp?.isSome do
     return {}
   unless ← isProp expr.root do
@@ -57,7 +57,8 @@ def getImportCandidates (expr : ExprWithPos) (hyp? : Option FVarId) : MetaM (Mat
 
 /-- Get all potential apply lemmas from the current file. Exclude lemmas from modules
 in the `librarySearch.excludedModules` option. -/
-def getModuleCandidates (e : Expr) (parentDecl? : Option Name) : MetaM (MatchResult ApplyAtLemma) := do
+def getModuleCandidates (e : Expr) (parentDecl? : Option Name) :
+    MetaM (MatchResult ApplyAtLemma) := do
   let moduleTreeRef ← createModuleTreeRef fun name cinfo ↦
     if name == parentDecl? then return [] else addApplyAtEntry name cinfo
   findModuleMatches moduleTreeRef e
@@ -79,7 +80,8 @@ def getHypothesisCandidates (expr : ExprWithPos) (hyp? : Option FVarId) :
     return {}
   unless ← isProp expr.root do
     return {}
-  let (candidates, _) ← (← getHypotheses hyp?).getMatch expr.root (unify := false) (matchRootStar := true)
+  let (candidates, _) ← (← getHypotheses hyp?).getMatch expr.root
+    (unify := false) (matchRootStar := true)
   MonadExcept.ofExcept candidates
 
 
@@ -105,6 +107,7 @@ structure Application extends ApplyAtLemma where
   makesNewMVars : Bool
   info : ApplicationInfo
 
+set_option linter.style.emptyLine false in
 /-- If `thm` can be used to apply to `e`, return the applications. -/
 def checkApplication (lem : ApplyAtLemma) (target : Expr) : MetaM (Option Application) := do
   let thm ← match lem.name with
@@ -117,14 +120,16 @@ def checkApplication (lem : ApplyAtLemma) (target : Expr) : MetaM (Option Applic
   let unifies ← withTraceNodeBefore `infoview_suggest (return m! "unifying {e} =?= {target}")
     (withReducible (isDefEq e target))
   unless unifies do return none
-  try synthAppInstances `infoview_suggest default mvars binderInfos false false catch _ => return none
+  try synthAppInstances `infoview_suggest default mvars binderInfos false false
+  catch _ => return none
   let mut newGoals := #[]
   for mvar in mvars, bi in binderInfos do
     unless ← mvar.mvarId!.isAssigned do
       newGoals := newGoals.push (mvar.mvarId!, bi)
 
   let replacement ← instantiateMVars replacement
-  let makesNewMVars ← pure (replacement.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome <||>
+  let makesNewMVars ←
+    pure (replacement.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome <||>
     newGoals.anyM fun goal ↦ do
       let type ← instantiateMVars <| ← goal.1.getType
       return (type.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome
@@ -177,6 +182,7 @@ instance : LT ApplyResult where
 instance : DecidableLT ApplyResult := fun a b => by
   dsimp [LT.lt]; infer_instance
 
+set_option linter.style.emptyLine false in
 /-- Construct the `Result` from an `Application`. -/
 def Application.toResult (app : Application) (pasteInfo : RwPasteInfo) :
     MetaM ApplyResult := do
@@ -193,7 +199,8 @@ def Application.toResult (app : Application) (pasteInfo : RwPasteInfo) :
 
   let html (showNames : Bool) :=
     mkSuggestionElement tactic pasteInfo.toPasteInfo <|
-      let newGoals := newGoals.map (<div> <strong className="goal-vdash">⊢ </strong> <InteractiveCode fmt={·}/> </div>)
+      let newGoals := newGoals.map
+        (<div> <strong className="goal-vdash">⊢ </strong> <InteractiveCode fmt={·}/> </div>)
       .element "div" #[] <|
         #[<InteractiveCode fmt={replacement}/>] ++ newGoals ++
           if showNames then #[<div> <InteractiveCode fmt={prettyLemma}/> </div>] else #[]
@@ -204,7 +211,8 @@ def Application.toResult (app : Application) (pasteInfo : RwPasteInfo) :
     filtered := ← if !app.makesNewMVars then (some <$> html false) else pure none
     unfiltered := ← html true
     info := app.info
-    pattern := ← forallTelescopeReducing lemmaType fun xs _ => do ppExprTagged (← inferType xs.back!)
+    pattern := ← forallTelescopeReducing lemmaType fun xs _ => do
+      ppExprTagged (← inferType xs.back!)
   }
 
 /-- `generateSuggestion` is called in parallel for all apply lemmas.
@@ -226,7 +234,8 @@ def generateSuggestion (expr : Expr) (pasteInfo : RwPasteInfo) (lem : ApplyAtLem
     catch e => withCurrHeartbeats do
       return .error
         <li>
-          An error occurred when processing apply lemma <InteractiveCode fmt={← ppPremiseTagged lem.name}/>:
+          An error occurred when processing apply lemma
+          <InteractiveCode fmt={← ppPremiseTagged lem.name}/>:
           <br/>
           <InteractiveMessage msg={← WithRpcRef.mk e.toMessageData} />
         </li>)
@@ -242,7 +251,8 @@ def generateSuggestion (expr : Expr) (pasteInfo : RwPasteInfo) (lem : ApplyAtLem
 
 /-- `SectionState` is the part of `WidgetState` corresponding to each section of suggestions. -/
 structure SectionState where
-  /-- Whether the applications are using a local hypothesis, a local theorem, or an imported theorem. -/
+  /-- Whether the applications are using a local hypothesis,
+  a local theorem, or an imported theorem. -/
   kind : PremiseKind
   /-- The results of the theorems that successfully apply. -/
   results : Array ApplyResult
@@ -289,6 +299,7 @@ def renderSection (filter : Bool) (s : SectionState) : Option Html := do
   let suffix := if s.pending.isEmpty then suffix else suffix ++ " ⏳"
   let htmls := if filter then s.results.filterMap (·.filtered) else s.results.map (·.unfiltered)
   guard (!htmls.isEmpty)
-  return mkListElement htmls <span> apply at: <InteractiveCode fmt={head.pattern}/> {.text suffix} </span>
+  return mkListElement htmls
+    <span> apply at: <InteractiveCode fmt={head.pattern}/> {.text suffix} </span>
 
-end ApplyAt
+end InfoviewSuggest.ApplyAt

@@ -89,6 +89,7 @@ structure RefreshComponentProps where
   state : WithRpcRef RefreshComponent.RefreshRef
   deriving RpcEncodable
 
+set_option linter.style.longLine false in
 /-- Display an inital HTML, and repeatedly update the display with new HTML objects
 as they appear in `state`. A dedicated thread should be spawned in order to modify `state`. -/
 @[widget_module]

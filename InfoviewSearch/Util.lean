@@ -215,7 +215,8 @@ def kabstractFindsPositions (p : Expr) (pos : ExprWithPos) : MetaM Bool := do
       | .app f a         => visit f pos.pushAppFn; visit a pos.pushAppArg
       | .mdata _ e       => visit e pos
       | .proj _ _ e      => visit e pos.pushProj
-      | .letE _ t v b _  => visit t pos.pushLetVarType; visit v pos.pushLetValue; visit b pos.pushLetBody
+      | .letE _ t v b _  =>
+        visit t pos.pushLetVarType; visit v pos.pushLetValue; visit b pos.pushLetBody
       | .lam _ d b _     => visit d pos.pushBindingDomain; visit b pos.pushBindingBody
       | .forallE _ d b _ => visit d pos.pushBindingDomain; visit b pos.pushBindingBody
       | _                => pure ()

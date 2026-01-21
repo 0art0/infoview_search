@@ -137,7 +137,8 @@ def addRewriteEntry (name : Name) (cinfo : ConstantInfo) :
 
 
 /-- Try adding the local hypothesis to the `RefinedDiscrTree`. -/
-def addLocalRewriteEntry (decl : LocalDecl) : MetaM (List (RewriteLemma × List (Key × LazyEntry))) :=
+def addLocalRewriteEntry (decl : LocalDecl) :
+    MetaM (List (RewriteLemma × List (Key × LazyEntry))) :=
   withReducible do
   let (_, _, eqn) ← forallMetaTelescopeReducing decl.type
   let some (lhs, rhs) := eqOrIff? (← whnf eqn) | return []
@@ -145,7 +146,8 @@ def addLocalRewriteEntry (decl : LocalDecl) : MetaM (List (RewriteLemma × List 
     ({ name := .fvar decl.fvarId, symm := false }, ← initializeLazyEntryWithEta lhs),
     ({ name := .fvar decl.fvarId, symm := true }, ← initializeLazyEntryWithEta rhs)]
 
-initialize importedRewriteLemmasExt : EnvExtension (IO.Ref (Option (RefinedDiscrTree RewriteLemma))) ←
+initialize importedRewriteLemmasExt :
+    EnvExtension (IO.Ref (Option (RefinedDiscrTree RewriteLemma))) ←
   registerEnvExtension (IO.mkRef none)
 
 /-- Get all potential rewrite lemmas from the imported environment.
@@ -217,6 +219,7 @@ structure Rewrite extends RewriteLemma where
   info : RewriteInfo
   justLemmaName : Bool
 
+set_option linter.style.emptyLine false in
 /-- If `thm` can be used to rewrite `e`, return the rewrite.
 HACK: the `name` argument is set to `FVarId.name` in the local rewrite case.
 This works conveniently. -/
@@ -239,7 +242,8 @@ def checkRewrite (lem : RewriteLemma) (e : Expr) (pos : ExprWithPos) : MetaM (Op
   -- instead of just not showing the suggestion.
   if lhs.toHeadIndex != e.toHeadIndex || lhs.headNumArgs != e.headNumArgs then
     return none
-  try synthAppInstances `infoview_suggest default mvars binderInfos false false catch _ => return none
+  try synthAppInstances `infoview_suggest default mvars binderInfos false false
+  catch _ => return none
   let mut extraGoals := #[]
   let mut justLemmaName := true
   for mvar in mvars, bi in binderInfos do
@@ -250,7 +254,8 @@ def checkRewrite (lem : RewriteLemma) (e : Expr) (pos : ExprWithPos) : MetaM (Op
         extraGoals := extraGoals.push (mvar.mvarId!, bi)
 
   let replacement ← instantiateMVars rhs
-  let makesNewMVars ← pure (replacement.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome <||>
+  let makesNewMVars ←
+    pure (replacement.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome <||>
     extraGoals.anyM fun goal ↦ do
       let type ← instantiateMVars <| ← goal.1.getType
       return (type.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome
@@ -266,7 +271,8 @@ def checkRewrite (lem : RewriteLemma) (e : Expr) (pos : ExprWithPos) : MetaM (Op
     name := lem.name.toString
     replacement := ← abstractMVars replacement
   }
-  return some { lem with proof, replacement, extraGoals, makesNewMVars, isRefl, info, justLemmaName }
+  return some
+    { lem with proof, replacement, extraGoals, makesNewMVars, isRefl, info, justLemmaName }
 
 def RewriteInfo.lt (a b : RewriteInfo) : Bool :=
   Ordering.isLT <|
@@ -342,7 +348,8 @@ where
   This is shown at the header of each section of rewrite results. -/
   pattern (type : Expr) : MetaM CodeWithInfos := do
     forallTelescopeReducing type fun _ e => do
-      let some (lhs, rhs) := eqOrIff? (← whnf e) | throwError "Expected equation, not {indentExpr e}"
+      let some (lhs, rhs) := eqOrIff? (← whnf e)
+        | throwError "Expected equation, not {indentExpr e}"
       ppExprTagged <| if rw.symm then rhs else lhs
 
 /-- `generateSuggestion` is called in parallel for all rewrite lemmas.
@@ -353,8 +360,8 @@ where
 Note: we use two `try`-`catch` clauses, because we rely on `ppConstTagged`
 in the first `catch` branch, which could (in principle) throw an error again.
 -/
-def generateSuggestion (expr : Expr) (pasteInfo : RwPasteInfo) (pos : ExprWithPos) (lem : RewriteLemma) :
-    MetaM <| Task (Except Html <| Option RwResult) := do
+def generateSuggestion (expr : Expr) (pasteInfo : RwPasteInfo) (pos : ExprWithPos)
+    (lem : RewriteLemma) : MetaM <| Task (Except Html <| Option RwResult) := do
   BaseIO.asTask <| EIO.catchExceptions (← dropM do withCurrHeartbeats do
     have : MonadExceptOf _ MetaM := MonadAlwaysExcept.except
     try .ok <$> withNewMCtxDepth do
@@ -364,7 +371,8 @@ def generateSuggestion (expr : Expr) (pasteInfo : RwPasteInfo) (pos : ExprWithPo
     catch e => withCurrHeartbeats do
       return .error
         <li>
-          An error occurred when processing rewrite lemma <InteractiveCode fmt={← ppPremiseTagged lem.name}/>:
+          An error occurred when processing rewrite lemma
+          <InteractiveCode fmt={← ppPremiseTagged lem.name}/>:
           <br/>
           <InteractiveMessage msg={← WithRpcRef.mk e.toMessageData} />
         </li>)
