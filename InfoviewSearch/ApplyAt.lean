@@ -1,6 +1,7 @@
 module
 
 public import InfoviewSearch.Util
+public import Mathlib.Tactic.ApplyAt
 
 public meta section
 
@@ -156,8 +157,6 @@ def ApplicationInfo.isDuplicate (a b : ApplicationInfo) : MetaM Bool :=
   a.newGoals.size.allM fun i _ =>
     pure (a.newGoals[i]!.mvars.size == b.newGoals[i]!.mvars.size)
       <&&> isExplicitEq a.newGoals[i]!.expr b.newGoals[i]!.expr
-
-local syntax (name := applyAt) "apply " term " at " ident : tactic
 
 /-- Return the `apply` tactic that performs the application. -/
 def tacticSyntax (app : Application) (pasteInfo : RwPasteInfo) : MetaM (TSyntax `tactic) := do

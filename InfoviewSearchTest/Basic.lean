@@ -48,3 +48,8 @@ example (h : m ≡ k [MOD n]) (h' : m ≡ k + 1 [MOD n]) : m ≡ k [MOD n] := by
   -- TODO: make this work:
   -- search_test h "/1" => "grw [← h'] at h\n  "
   exact test_sorry
+
+example {p q r : Prop} (h₁ : p → q → r) (h₂ : p → q) (h₃ : p) : r := by
+  search_test h₃ "" => "apply h₂ at h₃\n  "
+  -- TODO: make this work:
+  -- search_test h₁ "/1/0" => "apply_rw [← h₂]\n  "
