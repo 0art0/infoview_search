@@ -168,7 +168,7 @@ where
     if start < stop then
       let mname := env.header.moduleNames[start]!
       let mdata := env.header.moduleData[start]!
-      let tree ← loadImportedModule cctx env data mstate cstate act mname mdata arr
+      let arr ← loadImportedModule cctx env data mstate cstate act mname mdata arr
       go (start+1) stop arr mstate cstate
     else
       return arr
