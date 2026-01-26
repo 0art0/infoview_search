@@ -97,57 +97,73 @@ def isBadMatch (e : Expr) : Bool :=
   e.eq?.any fun (α, l, r) =>
     α.getAppFn.isMVar && l.getAppFn.isMVar && r.getAppFn.isMVar && l != r
 
+public structure Choice where
+  rw : Bool
+  grw : Bool
+  app : Bool
+  appAt : Bool
+
 /-- Given a constant, compute what needs to be added to the various discrimination trees. -/
-def Entries.addConst (entries : Entries) (name : Name) (cinfo : ConstantInfo) :
+def Entries.addConst (choice : Choice) (entries : Entries) (name : Name) (cinfo : ConstantInfo) :
     MetaM Entries := do
   setMCtx {}
   let (xs, _, e) ← forallMetaTelescope cinfo.type
   let mut { rw, grw, app, appAt } := entries
   -- apply
-  if !isBadMatch e then
-    app ← insertEntry app e ⟨.const name⟩
-  -- apply at
-  if let some x := xs.back? then
-    let e ← inferType x
+  if choice.app then
     if !isBadMatch e then
-      appAt ← insertEntry appAt e ⟨.const name⟩
-  if let .app (.app rel lhs) rhs := e then
-    let .const relName _ := rel.getAppFn | pure ()
-    -- rw
-    if relName matches ``Iff | ``Eq then
-      if !isBadMatch lhs then
-        rw ← insertEntry rw lhs ⟨.const name, false⟩
-      if !isBadMatch rhs && (isBadMatch lhs || !isMVarSwap lhs rhs) then
-        rw ← insertEntry rw rhs ⟨.const name, true⟩
-    -- grw
-    else
-      if !isBadMatch lhs then
-        grw ← insertEntry grw lhs ⟨.const name, false, relName⟩
-      if !isBadMatch rhs then
-        grw ← insertEntry grw rhs ⟨.const name, true, relName⟩
+      app ← insertEntry app e ⟨.const name⟩
+  -- apply at
+  if choice.appAt then
+    if let some x := xs.back? then
+      let e ← inferType x
+      if !isBadMatch e then
+        appAt ← insertEntry appAt e ⟨.const name⟩
+  if choice.rw || choice.grw then
+    if let .app (.app rel lhs) rhs := e then
+      let .const relName _ := rel.getAppFn | pure ()
+      -- rw
+      if relName matches ``Iff | ``Eq then
+        if choice.rw then
+          if !isBadMatch lhs then
+            rw ← insertEntry rw lhs ⟨.const name, false⟩
+          if !isBadMatch rhs && (isBadMatch lhs || !isMVarSwap lhs rhs) then
+            rw ← insertEntry rw rhs ⟨.const name, true⟩
+      -- grw
+      else
+        if choice.grw then
+          if !isBadMatch lhs then
+            grw ← insertEntry grw lhs ⟨.const name, false, relName⟩
+          if !isBadMatch rhs then
+            grw ← insertEntry grw rhs ⟨.const name, true, relName⟩
   return { rw, grw, app, appAt }
 
 /-- Given a free variable, compute what needs to be added to the various discrimination trees. -/
-def Entries.addVar (entries : Entries) (decl : LocalDecl) : MetaM Entries := do
+def Entries.addVar (choice : Choice) (entries : Entries) (decl : LocalDecl) : MetaM Entries := do
   let (xs, _, e) ← forallMetaTelescope decl.type
   let mut { rw, grw, app, appAt } := entries
   -- apply
-  app ← insertEntry app e ⟨.fvar decl.fvarId⟩
+  if choice.app then
+    app ← insertEntry app e ⟨.fvar decl.fvarId⟩
   -- apply at
-  if let some x := xs.back? then
-    let e ← inferType x
-    appAt ← insertEntry appAt e ⟨.fvar decl.fvarId⟩
-  if let .app (.app rel lhs) rhs := e then
-    let .const relName _ := rel.getAppFn | pure ()
-    -- rw
-    if relName matches ``Iff | ``Eq then
-      rw ← insertEntry rw lhs ⟨.fvar decl.fvarId, false⟩
-      if !isMVarSwap lhs rhs then
-        rw ← insertEntry rw rhs ⟨.fvar decl.fvarId, true⟩
-    -- grw
-    else
-      grw ← insertEntry grw lhs ⟨.fvar decl.fvarId, false, relName⟩
-      grw ← insertEntry grw rhs ⟨.fvar decl.fvarId, true, relName⟩
+  if choice.appAt then
+    if let some x := xs.back? then
+      let e ← inferType x
+      appAt ← insertEntry appAt e ⟨.fvar decl.fvarId⟩
+  if choice.rw || choice.grw then
+    if let .app (.app rel lhs) rhs := e then
+      let .const relName _ := rel.getAppFn | pure ()
+      -- rw
+      if relName matches ``Iff | ``Eq then
+        if choice.rw then
+          rw ← insertEntry rw lhs ⟨.fvar decl.fvarId, false⟩
+          if !isMVarSwap lhs rhs then
+            rw ← insertEntry rw rhs ⟨.fvar decl.fvarId, true⟩
+      -- grw
+      else
+        if choice.grw then
+          grw ← insertEntry grw lhs ⟨.fvar decl.fvarId, false, relName⟩
+          grw ← insertEntry grw rhs ⟨.fvar decl.fvarId, true, relName⟩
   return { rw, grw, app, appAt }
 
 public structure PreDiscrTrees where
@@ -167,35 +183,41 @@ public initialize grwRef : IO.Ref (Option (RefinedDiscrTree GRewriteLemma)) ← 
 public initialize appRef : IO.Ref (Option (RefinedDiscrTree ApplyLemma)) ← IO.mkRef none
 public initialize appAtRef : IO.Ref (Option (RefinedDiscrTree ApplyAtLemma)) ← IO.mkRef none
 
-public def computeImportDiscrTrees : CoreM Unit := do
-  let (tasks, errors) ← foldEnv {} Entries.addConst 5000
+public def computeImportDiscrTrees (choice : Choice) : CoreM Unit := do
+  let choice := {
+    rw := ← pure choice.rw <&&> (·.isNone) <$> rwRef.get
+    grw := ← pure choice.grw <&&> (·.isNone) <$> grwRef.get
+    app := ← pure choice.app <&&> (·.isNone) <$> appRef.get
+    appAt := ← pure choice.appAt <&&> (·.isNone) <$> appAtRef.get
+  }
+  let (tasks, errors) ← foldEnv {} (Entries.addConst choice) 5000
   let pre : PreDiscrTrees := tasks.foldl (·.append ·.get) {}
-  rwRef.set pre.rw.toRefinedDiscrTree
-  grwRef.set pre.grw.toRefinedDiscrTree
-  appRef.set pre.app.toRefinedDiscrTree
-  appAtRef.set pre.appAt.toRefinedDiscrTree
+  if choice.rw then rwRef.set pre.rw.toRefinedDiscrTree
+  if choice.grw then grwRef.set pre.grw.toRefinedDiscrTree
+  if choice.app then appRef.set pre.app.toRefinedDiscrTree
+  if choice.appAt then appAtRef.set pre.appAt.toRefinedDiscrTree
   --TODO: Maybe we should rather panic, because the logging messages will be discarded...
   logImportFailures errors
 
-public def computeModuleDiscrTrees (parentDecl? : Option Name) : CoreM PreDiscrTrees := do
+public def computeModuleDiscrTrees (choice : Choice) (parentDecl? : Option Name) :
+    CoreM PreDiscrTrees := do
   let (pre, errors) ← foldCurrModule {} fun entries name cinfo ↦
-    if name == parentDecl? then pure entries else entries.addConst name cinfo
+    if name == parentDecl? then pure entries else entries.addConst choice name cinfo
   logImportFailures errors
   return .append {} pre
 
-public def computeLCtxDiscrTrees (fvarId? : Option FVarId) : MetaM PreDiscrTrees := withReducible do
+public def computeLCtxDiscrTrees (choice : Choice) (fvarId? : Option FVarId) :
+    MetaM PreDiscrTrees := withReducible do
   let mut entries : Entries := {}
   for decl in ← getLCtx do
     if !decl.isImplementationDetail && fvarId?.all (· != decl.fvarId) then
-      entries ← entries.addVar decl
+      entries ← entries.addVar choice decl
   return .append {} entries
 
 
 public def getImportMatches {α} (ref : IO.Ref (Option (RefinedDiscrTree α))) (e : Expr) :
     MetaM (MatchResult α) := do
-  let some tree ← ref.swap none |
-    -- TODO: implement this thing via a task/promise. Then if it is none, we panic! here.
-    computeImportDiscrTrees; getImportMatches ref e
+  let some tree ← ref.swap none | throwError "The discrimination tree was not computed"
   let (candidates, tree) ← getMatch tree e false false
   ref.set (some tree)
   MonadExcept.ofExcept candidates

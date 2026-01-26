@@ -109,15 +109,20 @@ public def initializeWidgetState (rootExpr : Expr) (subExpr : SubExpr) (pasteInf
   let mut sections := #[]
 
   let gpos? ← Grw.getGRewritePos? rootExpr subExpr fvarId?.isSome
-
-  let pres ← computeLCtxDiscrTrees fvarId?
+  let choice : Choice := {
+    rw := true
+    grw := gpos?.isSome
+    app := subExpr.pos == .root && fvarId?.isNone
+    appAt := subExpr.pos == .root && fvarId?.isSome
+  }
+  let pres ← computeLCtxDiscrTrees choice fvarId?
   let hyp? ← fvarId?.mapM (·.getUserName)
   Core.checkSystem "infoview_search"
   for cand in ← getCandidates rootExpr subExpr pres gpos? hyp? do
     sections := sections.push
       (← cand.generateSuggestion rootExpr subExpr pasteInfo occ .hypothesis gpos?)
 
-  let pres ← computeModuleDiscrTrees parentDecl?
+  let pres ← computeModuleDiscrTrees choice parentDecl?
   Core.checkSystem "infoview_search"
   for cand in ← getCandidates rootExpr subExpr pres gpos? hyp? do
     sections := sections.push
@@ -125,6 +130,7 @@ public def initializeWidgetState (rootExpr : Expr) (subExpr : SubExpr) (pasteInf
 
   Core.checkSystem "infoview_search"
   let importTask? := some <| ← EIO.asTask <| ← dropM (m := MetaM) do
+    computeImportDiscrTrees choice
     (← getImportCandidates rootExpr subExpr gpos? hyp?).mapM
       (·.generateSuggestion rootExpr subExpr pasteInfo occ .fromImport gpos?)
 
@@ -178,6 +184,8 @@ where
       (rewriteTarget : CodeWithInfos) : Html :=
     let htmls := state.sections.filterMap fun
       | .rw s | .grw s | .app s | .appAt s => s.render filter
+    let htmls := if state.importTask?.isNone then htmls else
+      htmls.push <| .text "Imported theorems are being loaded..."
     let htmls := match renderExceptions state.exceptions with
       | some html => htmls.push html
       | none => htmls
