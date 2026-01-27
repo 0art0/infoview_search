@@ -55,6 +55,13 @@ example {p q r : Prop} (h₁ : p → q → r) (h₂ : p → q) (h₃ : p) : r :=
   -- search_test h₁ "/1/0" => "apply_rw [← h₂]\n  "
   exact test_sorry
 
+-- Test with bound variables:
+example : ∀ n m : Nat, n + m = m + n := by
+  search_test "/1/1/1" => "simp_rw [Nat.add_comm]\n  "
+  intro n m
+  -- The arguments are only inserted when needed:
+  search_test "/1" => "rw [Nat.add_comm m n]\n  "
+  search_test "/0/1" => "rw [Nat.add_comm]\n  "
 
 /-
 TODO: add tests for
@@ -63,6 +70,7 @@ TODO: add tests for
   (and test that this doesn't work with global theorems).
 - The `rw` suggestions only show one of the two directions for lemmas that are the same in
   both directions.
+- When it tries to pass arguments explicitly, and this gives an incorrectly located rewrite.
 
 TODO:
 

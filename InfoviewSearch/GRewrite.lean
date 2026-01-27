@@ -85,12 +85,12 @@ structure GRewrite extends GRewriteLemma where
   info : RewriteInfo
   justLemmaName : Bool
   hyp? : Option Name
-  occ : Option Nat
+  occ : LOption Nat
 
 set_option linter.style.emptyLine false in
 /-- If `thm` can be used to rewrite `e`, return the rewrite. -/
 def checkGRewrite (lem : GRewriteLemma) (rootExpr : Expr) (subExpr : SubExpr) (gpos : GRewritePos)
-    (hyp? : Option Name) (occ : Option Nat) : MetaM (Option GRewrite) := withReducible do
+    (hyp? : Option Name) (occ : LOption Nat) : MetaM (Option GRewrite) := withReducible do
   let e := subExpr.expr
   unless lem.relName == gpos.relName && lem.symm == gpos.symm do
     return none
@@ -128,7 +128,9 @@ def checkGRewrite (lem : GRewriteLemma) (rootExpr : Expr) (subExpr : SubExpr) (g
       return (type.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome
   let proof ← instantiateMVars (mkAppN thm mvars)
   let isRefl ← isExplicitEq e replacement
-  let justLemmaName ← withMCtx mctxOrig do kabstractFindsPositions rootExpr lhsOrig subExpr.pos
+  let justLemmaName ←
+    if occ matches .undef then pure true
+    else withMCtx mctxOrig do kabstractFindsPositions rootExpr lhsOrig subExpr.pos
   let info := {
     numGoals := extraGoals.size
     nameLenght := lem.name.length
@@ -158,7 +160,7 @@ def tacticSyntax (grw : GRewrite) : MetaM (TSyntax `tactic) := do
       `(term| $(mkIdent <| ← grw.name.unresolveName))
     else
       withOptions (pp.mvars.set · false) (PrettyPrinter.delab grw.proof)
-  mkRewrite grw.occ grw.symm proof grw.hyp? (g := true)
+  mkRewrite grw.occ grw.symm proof grw.hyp? (grw := true)
 
 /-- `RwResult` stores the information from a rewrite lemma that was successful. -/
 structure RwResult where
@@ -224,7 +226,7 @@ Note: we use two `try`-`catch` clauses, because we rely on `ppConstTagged`
 in the first `catch` branch, which could (in principle) throw an error again.
 -/
 def generateSuggestion (rootExpr : Expr) (subExpr : SubExpr) (pasteInfo : PasteInfo)
-    (gpos : GRewritePos) (hyp? : Option Name) (occ : Option Nat) (lem : GRewriteLemma) :
+    (gpos : GRewritePos) (hyp? : Option Name) (occ : LOption Nat) (lem : GRewriteLemma) :
     MetaM <| Task (Except Html <| Option RwResult) := do
   BaseIO.asTask <| EIO.catchExceptions (← dropM do withCurrHeartbeats do
     have : MonadExceptOf _ MetaM := MonadAlwaysExcept.except

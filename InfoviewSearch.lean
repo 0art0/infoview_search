@@ -20,6 +20,13 @@ def render (parts : Array Html) : Html :=
   else
     .element "div" #[] parts
 
+def viewKAbstractSubExpr' {α} (e : Expr) (pos : SubExpr.Pos)
+    (k : Expr → LOption Nat → MetaM α) : MetaM α := do
+  if let some (subExpr, occ) ← withReducible <| viewKAbstractSubExpr e pos then
+    k subExpr occ.toLOption
+  else
+    Meta.viewSubexpr (fun _ e ↦ k e .undef) pos e
+
 public def generateSuggestions (loc : SubExpr.GoalsLocation) (pasteInfo : PasteInfo)
     (parentDecl? : Option Name) (token : RefreshToken) : MetaM Unit := do
   let decl ← loc.mvarId.getDecl
@@ -35,19 +42,16 @@ public def generateSuggestions (loc : SubExpr.GoalsLocation) (pasteInfo : PasteI
   let rootExpr ← instantiateMVars <| ← match fvarId? with
     | some fvarId => fvarId.getType
     | none => pure decl.type
-  -- TODO: instead of rejecting terms with bound variables, and rejecting terms with a bad motive,
-  -- use `simp_rw` as the suggested tactic instead of `rw`.
   -- TODO: instead of computing the occurrences a single time (i.e. the `n` in `nth_rw n`),
   -- compute the occurrence for each suggestion separately, to avoid inaccuracies.
-  let some (subExpr, occ) ← withReducible <| viewKAbstractSubExpr rootExpr pos |
-    token.refresh <| .text
-      "expressions with bound variables are not yet supported for library search"
+  viewKAbstractSubExpr' rootExpr pos fun subExpr occ ↦ do
   unless ← kabstractIsTypeCorrect rootExpr subExpr pos do
     token.refresh <| .text "infoview_search: the selected expression cannot be rewritten, \
       because the motive is not type correct. \
       This usually occurs when trying to rewrite a term that appears as a dependent argument."
     return
   let hyp? ← fvarId?.mapM (·.getUserName)
+  let mut result := result
   if let some html ← InteractiveUnfold.renderUnfolds subExpr occ hyp? pasteInfo then
     result := result.push html
   let token' ← RefreshToken.new <| .text "searching for applicable lemmas"

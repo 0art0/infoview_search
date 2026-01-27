@@ -70,7 +70,7 @@ def SectionState.hasProgressed : SectionState → BaseIO Bool
   | .appAt s => s.pending.anyM IO.hasFinished
 
 private def Candidates.generateSuggestion (rootExpr : Expr) (subExpr : SubExpr)
-    (pasteInfo : PasteInfo) (occ : Option Nat)
+    (pasteInfo : PasteInfo) (occ : LOption Nat)
     (kind : PremiseKind) (gpos : Option Grw.GRewritePos) :
     Candidates → MetaM SectionState
   | .rw hyp? arr => do
@@ -103,7 +103,7 @@ public structure WidgetState where
 
 set_option linter.style.emptyLine false in
 public def initializeWidgetState (rootExpr : Expr) (subExpr : SubExpr) (pasteInfo : PasteInfo)
-    (occ : Option Nat) (fvarId? : Option FVarId) (parentDecl? : Option Name) :
+    (occ : LOption Nat) (fvarId? : Option FVarId) (parentDecl? : Option Name) :
     MetaM WidgetState := do
   Core.checkSystem "infoview_search"
   let mut sections := #[]

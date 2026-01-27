@@ -4,6 +4,7 @@ public import ProofWidgets.Component.MakeEditLink
 public import ProofWidgets.Component.OfRpcMethod
 public import ProofWidgets.Data.Html
 public import Mathlib.Tactic.GRewrite
+public import Mathlib.Tactic.SimpRw
 public import Mathlib.Tactic.NthRewrite
 public meta import Mathlib.Lean.Meta.RefinedDiscrTree
 public import Batteries.Tactic.PermuteGoals
@@ -73,16 +74,20 @@ structure PasteInfo where
   /-- The preceding piece of syntax. This is used for merging consecutive `rw` tactics. -/
   stx : Syntax
 
-/-- Return syntax for the rewrite tactic `rw [e]`. -/
-def mkRewrite (occ : Option Nat) (symm : Bool) (e : Term) (loc : Option Name) (g := false) :
-    CoreM (TSyntax `tactic) := do
+/-- Return syntax for the rewrite tactic `rw [e]`.
+When `occ` is `none`, this means that `kabstract` cannot find the expression
+due to bound variables, so in that case we fall back to `simp_rw`. -/
+def mkRewrite (occ : LOption Nat) (symm : Bool) (e : Term) (loc : Option Name)
+    (grw := false) : CoreM (TSyntax `tactic) := do
   let loc := loc.map mkIdent
   let rule ← if symm then `(Parser.Tactic.rwRule| ← $e) else `(Parser.Tactic.rwRule| $e:term)
-  match occ, g with
-  | some n, false => `(tactic| nth_rw $(Syntax.mkNatLit n):num [$rule] $[at $loc:term]?)
-  | none, false => `(tactic| rw [$rule] $[at $loc:term]?)
-  | some n, true => `(tactic| nth_grw $(Syntax.mkNatLit n):num [$rule] $[at $loc:term]?)
-  | none, true => `(tactic| grw [$rule] $[at $loc:term]?)
+  match occ, grw with
+  | .some n, false => `(tactic| nth_rw $(Syntax.mkNatLit n):num [$rule] $[at $loc:term]?)
+  | .none, false => `(tactic| rw [$rule] $[at $loc:term]?)
+  | .undef, false => `(tactic| simp_rw [$rule] $[at $loc:term]?)
+  | .some n, true => `(tactic| nth_grw $(Syntax.mkNatLit n):num [$rule] $[at $loc:term]?)
+  -- We currently lack a variant of `grw` that rewrites bound variables, so we just use `grw`.
+  | _, true => `(tactic| grw [$rule] $[at $loc:term]?)
 
 /-- Get the `BinderInfo`s for the arguments of `mkAppN fn args`. -/
 def getBinderInfos (fn : Expr) (args : Array Expr) : MetaM (Array BinderInfo) := do
@@ -117,9 +122,14 @@ partial def isExplicitEq (t s : Expr) : MetaM Bool := do
 def mergeTactics? {m} [Monad m] [MonadRef m] [MonadQuotation m] (stx₁ stx₂ : Syntax) :
     m (Option (TSyntax `tactic)) := do
   match stx₁, stx₂ with
-  | `(tactic| rw [$[$rules₁],*] $[at $h₁:ident]?), `(tactic| rw [$[$rules₂],*] $[at $h₂:ident]?) =>
+  | `(tactic| rw [$[$rules₁],*] $[at $h₁:ident]?),
+    `(tactic| rw [$[$rules₂],*] $[at $h₂:ident]?) =>
     if h₁.map (·.getId) == h₂.map (·.getId) then
       return ← `(tactic| rw [$[$(rules₁ ++ rules₂)],*] $[at $h₁:ident]?)
+  | `(tactic| simp_rw [$[$rules₁],*] $[at $h₁:ident]?),
+    `(tactic| simp_rw [$[$rules₂],*] $[at $h₂:ident]?) =>
+    if h₁.map (·.getId) == h₂.map (·.getId) then
+      return ← `(tactic| simp_rw [$[$(rules₁ ++ rules₂)],*] $[at $h₁:ident]?)
   | `(tactic| grw [$[$rules₁],*] $[at $h₁:ident]?),
     `(tactic| grw [$[$rules₂],*] $[at $h₂:ident]?) =>
     if h₁.map (·.getId) == h₂.map (·.getId) then
@@ -183,7 +193,6 @@ structure ExprWithPos where
 
 def kabstractFindsPositions (e p : Expr) (targetPos : SubExpr.Pos) : MetaM Bool := do
   let e ← instantiateMVars e
-  let mctx ← getMCtx
   let pHeadIdx := p.toHeadIndex
   let pNumArgs := p.headNumArgs
   let rec
@@ -208,7 +217,6 @@ def kabstractFindsPositions (e p : Expr) (targetPos : SubExpr.Pos) : MetaM Bool 
       visitChildren
     else
       if ← isDefEq e p then
-        setMCtx mctx -- reset the `MetavarContext` because `isDefEq` can modify it if it succeeds
         visitChildren true
       else
         visitChildren

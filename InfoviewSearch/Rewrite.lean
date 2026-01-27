@@ -99,12 +99,12 @@ structure Rewrite extends RewriteLemma where
   info : RewriteInfo
   justLemmaName : Bool
   hyp? : Option Name
-  occ : Option Nat
+  occ : LOption Nat
 
 set_option linter.style.emptyLine false in
 /-- If `thm` can be used to rewrite `e`, return the rewrite. -/
 def checkRewrite (lem : RewriteLemma) (rootExpr : Expr) (subExpr : SubExpr)
-    (hyp? : Option Name) (occ : Option Nat) : MetaM (Option Rewrite) := do
+    (hyp? : Option Name) (occ : LOption Nat) : MetaM (Option Rewrite) := do
   let e := subExpr.expr
   let thm ← match lem.name with
     | .const name => mkConstWithFreshMVarLevels name
@@ -131,7 +131,7 @@ def checkRewrite (lem : RewriteLemma) (rootExpr : Expr) (subExpr : SubExpr)
   let mut occ := occ
   for mvar in mvars, bi in binderInfos do
     unless ← mvar.mvarId!.isAssigned do
-      if ← isProof mvar <&&> mvar.mvarId!.assumptionCore then
+      if ← pure (!occ matches .undef) <&&> isProof mvar <&&> mvar.mvarId!.assumptionCore then
         justLemmaName := false
       else
         extraGoals := extraGoals.push (mvar.mvarId!, bi)
@@ -144,9 +144,9 @@ def checkRewrite (lem : RewriteLemma) (rootExpr : Expr) (subExpr : SubExpr)
       return (type.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome
   let proof ← instantiateMVars (mkAppN thm mvars)
   let isRefl ← isExplicitEq e replacement
-  if justLemmaName then
+  if !occ matches .undef && justLemmaName then
     if ← withMCtx mctxOrig do kabstractFindsPositions rootExpr lhsOrig subExpr.pos then
-      occ := none
+      occ := .none
     else
       justLemmaName := false
   let info := {
@@ -245,7 +245,7 @@ Note: we use two `try`-`catch` clauses, because we rely on `ppConstTagged`
 in the first `catch` branch, which could (in principle) throw an error again.
 -/
 def generateSuggestion (rootExpr : Expr) (subExpr : SubExpr) (pasteInfo : PasteInfo)
-    (hyp? : Option Name) (occ : Option Nat) (lem : RewriteLemma) :
+    (hyp? : Option Name) (occ : LOption Nat) (lem : RewriteLemma) :
     MetaM <| Task (Except Html <| Option RwResult) := do
   BaseIO.asTask <| EIO.catchExceptions (← dropM do withCurrHeartbeats do
     have : MonadExceptOf _ MetaM := MonadAlwaysExcept.except

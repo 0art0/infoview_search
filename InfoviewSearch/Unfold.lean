@@ -124,7 +124,7 @@ def filteredUnfolds (e : Expr) : MetaM (Array Expr) := do
   (← unfolds e).filterM isUserFriendly
 
 /-- Return the tactic string that does the unfolding. -/
-def tacticSyntax (e eNew : Expr) (occ : Option Nat) (hyp? : Option Name) :
+def tacticSyntax (e eNew : Expr) (occ : LOption Nat) (hyp? : Option Name) :
     MetaM (TSyntax `tactic) := do
   let e ← PrettyPrinter.delab e
   let eNew ← PrettyPrinter.delab eNew
@@ -133,7 +133,7 @@ def tacticSyntax (e eNew : Expr) (occ : Option Nat) (hyp? : Option Name) :
 
 /-- Render the unfolds of `e` as given by `filteredUnfolds`, with buttons at each suggestion
 for pasting the rewrite tactic. Return `none` when there are no unfolds. -/
-def renderUnfolds (e : Expr) (occ : Option Nat) (hyp? : Option Name) (pasteInfo : PasteInfo) :
+def renderUnfolds (e : Expr) (occ : LOption Nat) (hyp? : Option Name) (pasteInfo : PasteInfo) :
     MetaM (Option Html) := do
   let results ← filteredUnfolds e
   if results.isEmpty then
