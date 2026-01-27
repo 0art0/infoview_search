@@ -5,7 +5,7 @@ Authors: Jovan Gerbscheid, Anand Rao
 -/
 module
 
-public import InfoviewSearch.Util
+public import InfoviewSearch.SectionState
 
 public meta section
 
@@ -59,7 +59,7 @@ def getGRewritePos? (rootExpr : Expr) (subExpr : SubExpr) (hyp? : Bool) :
     else throwError "{e} doesn't have {fvar} on either side"
   return some { relation, relName, symm }
 
-structure RewriteInfo where
+structure ResultId where
   numGoals : Nat
   nameLenght : Nat
   replacementSize : Nat
@@ -82,7 +82,7 @@ structure GRewrite extends GRewriteLemma where
   makesNewMVars : Bool
   /-- Whether the rewrite is reflexive -/
   isRefl : Bool
-  info : RewriteInfo
+  info : ResultId
   justLemmaName : Bool
   hyp? : Option Name
   occ : LOption Nat
@@ -141,14 +141,14 @@ def checkGRewrite (lem : GRewriteLemma) (rootExpr : Expr) (subExpr : SubExpr) (g
   return some { lem with
     proof, replacement, extraGoals, makesNewMVars, isRefl, info, justLemmaName, hyp?, occ }
 
-def RewriteInfo.lt (a b : RewriteInfo) : Bool :=
-  Ordering.isLT <|
-  (compare a.1 b.1).then <|
-  (compare a.2 b.2).then <|
-  (compare a.3 b.3).then <|
-  (compare a.4 b.4)
+instance : Ord ResultId where
+  compare a b :=
+    (compare a.1 b.1).then <|
+    (compare a.2 b.2).then <|
+    (compare a.3 b.3).then <|
+    (compare a.4 b.4)
 
-def RewriteInfo.isDuplicate (a b : RewriteInfo) : MetaM Bool :=
+def ResultId.isDuplicate (a b : ResultId) : MetaM Bool :=
   pure (a.replacement.mvars.size == b.replacement.mvars.size)
     <&&> isExplicitEq a.replacement.expr b.replacement.expr
 
@@ -162,26 +162,8 @@ def tacticSyntax (grw : GRewrite) : MetaM (TSyntax `tactic) := do
       withOptions (pp.mvars.set · false) (PrettyPrinter.delab grw.proof)
   mkRewrite grw.occ grw.symm proof grw.hyp? (grw := true)
 
-/-- `RwResult` stores the information from a rewrite lemma that was successful. -/
-structure RwResult where
-  /-- `filtered` will be shown in the filtered view. -/
-  filtered : Option Html
-  /-- `unfiltered` will be shown in the unfiltered view. -/
-  unfiltered : Html
-  /-- `info` is used for sorting and comparing rewrite theorems. -/
-  info : RewriteInfo
-  /-- The `pattern` of the first lemma in a section is shown in the header of that section. -/
-  pattern : CodeWithInfos
-deriving Inhabited
-
-instance : LT RwResult where
-  lt a b := a.info.lt b.info
-
-instance : DecidableLT RwResult := fun a b => by
-  dsimp [LT.lt]; infer_instance
-
 /-- Construct the `Result` from a `GRewrite`. -/
-def GRewrite.toResult (grw : GRewrite) (pasteInfo : PasteInfo) : MetaM RwResult := do
+def GRewrite.toResult (grw : GRewrite) (pasteInfo : PasteInfo) : MetaM (Result ResultId) := do
   let tactic ← tacticSyntax grw
   let replacement ← ppExprTagged grw.replacement
   let mut extraGoals := #[]
@@ -218,7 +200,7 @@ where
       ppExprTagged <| if grw.symm then rhs else lhs
 
 /-- `generateSuggestion` is called in parallel for all rewrite lemmas.
-- If the lemma succeeds, return a `RwResult`.
+- If the lemma succeeds, return a `Result GrwInfo`.
 - If the lemma fails, return `none`
 - If the attempt throws an error, return the error as `Html`.
 
@@ -227,7 +209,7 @@ in the first `catch` branch, which could (in principle) throw an error again.
 -/
 def generateSuggestion (rootExpr : Expr) (subExpr : SubExpr) (pasteInfo : PasteInfo)
     (gpos : GRewritePos) (hyp? : Option Name) (occ : LOption Nat) (lem : GRewriteLemma) :
-    MetaM <| Task (Except Html <| Option RwResult) := do
+    MetaM <| Task (Except Html <| Option (Result ResultId)) := do
   BaseIO.asTask <| EIO.catchExceptions (← dropM do withCurrHeartbeats do
     have : MonadExceptOf _ MetaM := MonadAlwaysExcept.except
     try .ok <$> withNewMCtxDepth do
@@ -249,59 +231,5 @@ def generateSuggestion (rootExpr : Expr) (subExpr : SubExpr) (pasteInfo : PasteI
           <br/>
           <InteractiveMessage msg={← WithRpcRef.mk e.toMessageData} />
         </li>
-
-/-! ### Maintaining the state of the widget -/
-
-/-- `SectionState` is the part of `WidgetState` corresponding to each section of suggestions. -/
-structure SectionState where
-  /-- Whether the rewrites are using a local hypothesis, a local theorem, or an imported theorem. -/
-  kind : PremiseKind
-  /-- The results of the theorems that successfully rewrite. -/
-  results : Array RwResult
-  /-- The computations for rewrite theorems that have not finished evaluating. -/
-  pending : Array (Task (Except Html <| Option RwResult))
-
-def SectionState.update (s : SectionState) : MetaM (Array Html × SectionState) := do
-  let mut pending := #[]
-  let mut results := s.results
-  let mut exceptions := #[]
-  for t in s.pending do
-    if !(← IO.hasFinished t) then
-      pending := pending.push t
-    else
-      match t.get with
-      | .error e => exceptions := exceptions.push e
-      | .ok none => pure ()
-      | .ok (some result) =>
-        if let some idx ← findDuplicate result results then
-          if result < results[idx]! then
-            results := results.modify idx ({ · with filtered := none })
-            results := results.binInsert (· < ·) result
-          else
-            results := results.binInsert (· < ·) { result with filtered := none }
-        else
-          results := results.binInsert (· < ·) result
-  return (exceptions, { s with pending, results })
-where
-  /-- Check if there is already a duplicate of `result` in `results`,
-  for which both appear in the filtered view. -/
-  findDuplicate (result : RwResult) (results : Array RwResult) : MetaM (Option Nat) := do
-    unless result.filtered.isSome do
-      return none
-    results.findIdxM? fun res =>
-      pure res.filtered.isSome <&&> res.info.isDuplicate result.info
-
-/-- Render one section of rewrite results. -/
-def SectionState.render (filter : Bool) (s : SectionState) : Option Html := do
-  let head ← s.results[0]?
-  let suffix := match s.kind with
-    | .hypothesis => " (local hypotheses)"
-    | .fromFile => " (lemmas from current file)"
-    | .fromImport => ""
-  let suffix := if s.pending.isEmpty then suffix else suffix ++ " ⏳"
-  let htmls := if filter then s.results.filterMap (·.filtered) else s.results.map (·.unfiltered)
-  guard (!htmls.isEmpty)
-  return mkListElement htmls
-    <span> grw: <InteractiveCode fmt={head.pattern}/> {.text suffix} </span>
 
 end InfoviewSearch.Grw

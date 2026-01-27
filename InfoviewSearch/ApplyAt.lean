@@ -1,6 +1,6 @@
 module
 
-public import InfoviewSearch.Util
+public import InfoviewSearch.SectionState
 public import Mathlib.Tactic.ApplyAt
 
 public meta section
@@ -13,7 +13,7 @@ structure ApplyAtLemma where
 
 /-! ### Checking apply lemmas -/
 
-structure ApplicationInfo where
+structure ResultId where
   numGoals : Nat
   nameLenght : Nat
   replacementSize : Nat
@@ -31,7 +31,7 @@ structure Application extends ApplyAtLemma where
   newGoals : Array (MVarId × BinderInfo)
   /-- Whether any of the new goals contain another a new metavariable -/
   makesNewMVars : Bool
-  info : ApplicationInfo
+  info : ResultId
   hyp : Name
 
 set_option linter.style.emptyLine false in
@@ -71,14 +71,14 @@ def checkApplication (lem : ApplyAtLemma) (e : Expr) (hyp : Name) : MetaM (Optio
   }
   return some { lem with proof, replacement, newGoals, makesNewMVars, info, hyp }
 
-def ApplicationInfo.lt (a b : ApplicationInfo) : Bool :=
-  Ordering.isLT <|
-  (compare a.1 b.1).then <|
-  (compare a.2 b.2).then <|
-  (compare a.3 b.3).then <|
-  (compare a.4 b.4)
+instance : Ord ResultId where
+  compare a b :=
+    (compare a.1 b.1).then <|
+    (compare a.2 b.2).then <|
+    (compare a.3 b.3).then <|
+    (compare a.4 b.4)
 
-def ApplicationInfo.isDuplicate (a b : ApplicationInfo) : MetaM Bool :=
+def ResultId.isDuplicate (a b : ResultId) : MetaM Bool :=
   pure (a.newGoals.size == b.newGoals.size) <&&>
   a.newGoals.size.allM fun i _ =>
     pure (a.newGoals[i]!.mvars.size == b.newGoals[i]!.mvars.size)
@@ -89,27 +89,10 @@ def tacticSyntax (app : Application) : MetaM (TSyntax `tactic) := do
   -- let proof ← withOptions (pp.mvars.set · false) (PrettyPrinter.delab app.proof)
   `(tactic| apply $(mkIdent (← app.name.unresolveName)) at $(mkIdent app.hyp))
 
-/-- `ApplyResult` stores the information from an apply lemma that was successful. -/
-structure ApplyResult where
-  /-- `filtered` will be shown in the filtered view. -/
-  filtered : Option Html
-  /-- `unfiltered` will be shown in the unfiltered view. -/
-  unfiltered : Html
-  /-- `info` is used for sorting and comparing apply theorems. -/
-  info : ApplicationInfo
-  /-- The `pattern` of the first lemma in a section is shown in the header of that section. -/
-  pattern : CodeWithInfos
-deriving Inhabited
-
-instance : LT ApplyResult where
-  lt a b := a.info.lt b.info
-
-instance : DecidableLT ApplyResult := fun a b => by
-  dsimp [LT.lt]; infer_instance
-
 set_option linter.style.emptyLine false in
 /-- Construct the `Result` from an `Application`. -/
-def Application.toResult (app : Application) (pasteInfo : PasteInfo) : MetaM ApplyResult := do
+def Application.toResult (app : Application) (pasteInfo : PasteInfo) :
+    MetaM (Result ResultId) := do
   let tactic ← tacticSyntax app
   let replacement ← ppExprTagged app.replacement
   let mut newGoals := #[]
@@ -140,7 +123,7 @@ def Application.toResult (app : Application) (pasteInfo : PasteInfo) : MetaM App
   }
 
 /-- `generateSuggestion` is called in parallel for all apply lemmas.
-- If the lemma succeeds, return a `ApplyResult`.
+- If the lemma succeeds, return a `Result AppAtInfo`.
 - If the lemma fails, return `none`
 - If the attempt throws an error, return the error as `Html`.
 
@@ -148,7 +131,7 @@ Note: we use two `try`-`catch` clauses, because we rely on `ppConstTagged`
 in the first `catch` branch, which could (in principle) throw an error again.
 -/
 def generateSuggestion (expr : Expr) (pasteInfo : PasteInfo) (hyp : Name) (lem : ApplyAtLemma) :
-    MetaM <| Task (Except Html <| Option ApplyResult) := do
+    MetaM <| Task (Except Html <| Option (Result ResultId)) := do
   BaseIO.asTask <| EIO.catchExceptions (← dropM do withCurrHeartbeats do
     have : MonadExceptOf _ MetaM := MonadAlwaysExcept.except
     try .ok <$> withNewMCtxDepth do
@@ -170,60 +153,5 @@ def generateSuggestion (expr : Expr) (pasteInfo : PasteInfo) (hyp : Name) (lem :
           <br/>
           <InteractiveMessage msg={← WithRpcRef.mk e.toMessageData} />
         </li>
-
-
-
-/-- `SectionState` is the part of `WidgetState` corresponding to each section of suggestions. -/
-structure SectionState where
-  /-- Whether the applications are using a local hypothesis,
-  a local theorem, or an imported theorem. -/
-  kind : PremiseKind
-  /-- The results of the theorems that successfully apply. -/
-  results : Array ApplyResult
-  /-- The computations for apply theorems that have not finished evaluating. -/
-  pending : Array (Task (Except Html <| Option ApplyResult))
-
-def SectionState.update (s : SectionState) : MetaM (Array Html × SectionState) := do
-  let mut pending := #[]
-  let mut results := s.results
-  let mut exceptions := #[]
-  for t in s.pending do
-    if !(← IO.hasFinished t) then
-      pending := pending.push t
-    else
-      match t.get with
-      | .error e => exceptions := exceptions.push e
-      | .ok none => pure ()
-      | .ok (some result) =>
-        if let some idx ← findDuplicate result results then
-          if result < results[idx]! then
-            results := results.modify idx ({ · with filtered := none })
-            results := results.binInsert (· < ·) result
-          else
-            results := results.binInsert (· < ·) { result with filtered := none }
-        else
-          results := results.binInsert (· < ·) result
-  return (exceptions, { s with pending, results })
-where
-  /-- Check if there is already a duplicate of `result` in `results`,
-  for which both appear in the filtered view. -/
-  findDuplicate (result : ApplyResult) (results : Array ApplyResult) : MetaM (Option Nat) := do
-    unless result.filtered.isSome do
-      return none
-    results.findIdxM? fun res =>
-      pure res.filtered.isSome <&&> res.info.isDuplicate result.info
-
-/-- Render one section of rewrite results. -/
-def SectionState.render (filter : Bool) (s : SectionState) : Option Html := do
-  let head ← s.results[0]?
-  let suffix := match s.kind with
-    | .hypothesis => " (local hypotheses)"
-    | .fromFile => " (lemmas from current file)"
-    | .fromImport => ""
-  let suffix := if s.pending.isEmpty then suffix else suffix ++ " ⏳"
-  let htmls := if filter then s.results.filterMap (·.filtered) else s.results.map (·.unfiltered)
-  guard (!htmls.isEmpty)
-  return mkListElement htmls
-    <span> apply at: <InteractiveCode fmt={head.pattern}/> {.text suffix} </span>
 
 end InfoviewSearch.ApplyAt

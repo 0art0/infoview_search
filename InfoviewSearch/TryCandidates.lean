@@ -51,28 +51,22 @@ def getCandidates (rootExpr : Expr) (subExpr : SubExpr) (pres : PreDiscrTrees)
       (← getMatches pres.grw.toRefinedDiscrTree subExpr.expr).elts.map fun _ ↦ (·.map (.grw hyp?))
   return cands.foldr (init := #[]) fun _ val acc ↦ acc ++ val
 
-public inductive SectionState where
-  | rw (s : Rw.SectionState)
-  | grw (s : Grw.SectionState)
-  | app (s : Apply.SectionState)
-  | appAt (s : ApplyAt.SectionState)
+public inductive SectionsState where
+  | rw (s : SectionState Rw.ResultId)
+  | grw (s : SectionState Grw.ResultId)
+  | app (s : SectionState Apply.ResultId)
+  | appAt (s : SectionState ApplyAt.ResultId)
 
-def SectionState.isFinished : SectionState → Bool
-  | .rw s => s.pending.isEmpty
-  | .grw s => s.pending.isEmpty
-  | .app s => s.pending.isEmpty
-  | .appAt s => s.pending.isEmpty
+def SectionsState.isFinished : SectionsState → Bool
+  | .rw s | .grw s | .app s | .appAt s => s.pending.isEmpty
 
-def SectionState.hasProgressed : SectionState → BaseIO Bool
-  | .rw s => s.pending.anyM IO.hasFinished
-  | .grw s => s.pending.anyM IO.hasFinished
-  | .app s => s.pending.anyM IO.hasFinished
-  | .appAt s => s.pending.anyM IO.hasFinished
+def SectionsState.hasProgressed : SectionsState → BaseIO Bool
+  | .rw s | .grw s | .app s | .appAt s => s.pending.anyM IO.hasFinished
 
 private def Candidates.generateSuggestion (rootExpr : Expr) (subExpr : SubExpr)
     (pasteInfo : PasteInfo) (occ : LOption Nat)
     (kind : PremiseKind) (gpos : Option Grw.GRewritePos) :
-    Candidates → MetaM SectionState
+    Candidates → MetaM SectionsState
   | .rw hyp? arr => do
     let arr ← arr.mapM (Rw.generateSuggestion rootExpr subExpr pasteInfo hyp? occ)
     return .rw { kind, results := #[], pending := arr }
@@ -89,13 +83,13 @@ private def Candidates.generateSuggestion (rootExpr : Expr) (subExpr : SubExpr)
 
 /-- While the suggestions are computed, `WidgetState` is used to keep track of the progress.
 Initially, it contains a bunch of unfinished `Task`s, and with each round of `updateWidgetState`,
-the finished tasks are stored as results in each `SectionState`. -/
+the finished tasks are stored as results in each `SectionsState`. -/
 public structure WidgetState where
   /-- The states of the sections in the widget. -/
-  sections : Array SectionState
+  sections : Array SectionsState
   /-- The sections corresponding to imported theorems. These are in a separate task, because
   they may take a long time to evaluate. Once evaluated, these are appended to `sections`. -/
-  importTask? : Option (Task (Except Exception <| Array SectionState))
+  importTask? : Option (Task (Except Exception <| Array SectionsState))
   /-- The errors that appeared in evaluating . -/
   exceptions : Array Html
   /-- The HTML shown at the drop-down above the suggestions. -/
@@ -154,19 +148,19 @@ def updateWidgetState (state : WidgetState) : MetaM WidgetState := do
   for s in state.sections do
     match s with
     | .rw s =>
-      let (exs, s) ← s.update
+      let (exs, s) ← s.update (·.isDuplicate ·)
       sections := sections.push <| .rw s
       exceptions := exceptions ++ exs
     | .grw s =>
-      let (exs, s) ← s.update
+      let (exs, s) ← s.update (·.isDuplicate ·)
       sections := sections.push <| .grw s
       exceptions := exceptions ++ exs
     | .app s =>
-      let (exs, s) ← s.update
+      let (exs, s) ← s.update (·.isDuplicate ·)
       sections := sections.push <| .app s
       exceptions := exceptions ++ exs
     | .appAt s =>
-      let (exs, s) ← s.update
+      let (exs, s) ← s.update (·.isDuplicate ·)
       sections := sections.push <| .appAt s
       exceptions := exceptions ++ exs
   return { state with sections, exceptions }
