@@ -97,18 +97,18 @@ def SectionState.update (s : SectionState α) (isDup : α → α → MetaM Bool)
   return ({ source := s.source, results, errors, pending })
 
 /-- Render one section of the library search results. -/
-def SectionState.render (filter : Bool) (s : SectionState α) (tactic : String) : Option Html := do
-  let head ← s.results[0]?
+def SectionState.render (filter : Bool) (s : SectionState α) (tactic : String) : Option Html :=
+  if s.results.isEmpty && s.errors.isEmpty then none else some <|
+  let head :=
+    if let some head := s.results[0]? then <InteractiveCode fmt={head.pattern}/> else .text ""
   let suffix := match s.source with
     | .hypothesis => " (local hypotheses)"
     | .fromFile => " (lemmas from current file)"
     | .fromImport => ""
   let suffix := if s.pending.isEmpty then suffix else suffix ++ " ⏳"
-  guard (!s.results.isEmpty)
   let htmls := if filter then s.results.filterMap (·.filtered) else s.results.map (·.unfiltered)
   let htmls := if s.errors.isEmpty then htmls else htmls.push <| renderErrors s.errors
-  return mkListElement htmls
-    <span> {.text s!"{tactic}: "}<InteractiveCode fmt={head.pattern}/> {.text suffix} </span>
+  mkListElement htmls <span> {.text s!"{tactic}: "}{head} {.text suffix} </span>
 where
   /-- Render the error messages -/
   renderErrors (errors : Array Html) : Html :=
@@ -118,11 +118,5 @@ where
       </summary>
       {Html.element "ul" #[("style", json% { "padding-left" : "30px"})] errors}
     </details>
-
-/-- Let the `#infoview_search` widget show all errors of lemmas that failed to apply. -/
-register_option infoview_search.debug : Bool := {
-  defValue := false
-  descr := "let `#infoview_search` show all lemmas that were candidates, but which failed to apply"
-}
 
 end InfoviewSearch

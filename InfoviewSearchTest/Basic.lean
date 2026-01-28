@@ -134,7 +134,6 @@ example (a b : Nat) (l : List Nat) (hl : a + b < l.length) (h : l[a + b] = 5) :
   rw! [Nat.add_comm]
   exact h
 
--- test for motive not type correct issue
 example (a b : Nat) (l : List Nat) (hl : a + b < l.length) (h : l[a + b] = 5) :
     b + a + l[b + a] = b + a + 5 := by
   search_test "/0/1/1/0/1" =>
@@ -154,8 +153,39 @@ TODO: add tests for
 
 TODO:
 
-- use `rw!` instead of `rw` when motive is not type correct
-- improve `nth_rw` heuristic & add a test
+- improve the blacklist heuristic. We should be allowed to use `.inj` and `.injEq`.
+  Note: there are theorems with `Simproc` in the name, which should be excluded.
+- Allow a user-defined filter in additiion to the blacklist?
+- improve `nth_rw` heuristic & add a test. Maybe, there should be a `set_option` that determines
+  whether to print arguments explicitly.
 - The filterdetails should each be focused in the relevant section
+
+- More tactic suggestions
+  - `simp`/`dsimp`. This requires integrating with `conv` mode,
+    in order to be able to simplify only subterms.
+  - `contrapose(!)`/`absurd(!)` on hypothesis and `by_contra(!)` on goal?
+  - `push_neg`, `norm_cast`, `push_cast`, `ring_nf`, `field_simp`
+  - `cases`/`induction`/`rcases`/`subst`
+  - `ext`, `funext`
+  - `congr!`, `gcongr`
+  - `infer_instance`
+  - `rintro`, as a combination of `intro` and `cases`
+  - `by_cases` on the selected proposition, if it is not purely in RHS of `→` or either side of `∧`
+  - `specialize`/`use`?
+  -
+- Improve messages of tactic suggestions.
+  - `intro` should show the new hypotheses and goal
+  - `induction` should somehow show what the induction looks like.
+    Then we can also give multiple different `induction`/`cases` suggestions.
+- The tactics section should be extensible via an attribute.
+
+- Improve the pasting feature: if the user moved their cursor around, we still want to paste the
+  tactic in the correct place.
+  This could also include special-casing for
+  - the `by` token (i.e. when creating the first tactic in a sequence)
+  - the focus dot `· `
+  - being inside another tactic combinator, e.g. `induction`, `cases`, `on_goal`
+
+- Detect whether we are in `conv` mode.
 
 -/
