@@ -128,10 +128,20 @@ example (f g : Nat → Nat) : (f + g) 2 = f 2 + g 2 := by
   exact test_sorry
 
 -- test for motive not type correct issue
-example (a b : Nat) (l : List Nat) (hl : a + b < l.length) (h : l[a + b] = 5) : l[b + a] = 5 := by
+example (a b : Nat) (l : List Nat) (hl : a + b < l.length) (h : l[a + b] = 5) :
+    l[b + a] = 5 := by
   search_test "/0/1/0/1" => "rw! [Nat.add_comm]\n  " "rw! [add_comm]\n  "
   rw! [Nat.add_comm]
   exact h
+
+-- test for motive not type correct issue
+example (a b : Nat) (l : List Nat) (hl : a + b < l.length) (h : l[a + b] = 5) :
+    b + a + l[b + a] = b + a + 5 := by
+  search_test "/0/1/1/0/1" =>
+    "rw! (occs := .pos [2]) [Nat.add_comm b a]\n  "
+    "rw! (occs := .pos [2]) [add_comm b a]\n  "
+  rw! (occs := .pos [2])  [Nat.add_comm b a]
+  rw [h]
 
 /-
 TODO: add tests for

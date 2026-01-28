@@ -109,7 +109,7 @@ where
 end Meta
 
 section Syntax
-open Syntax
+open Syntax Parser.Tactic
 
 inductive RwKind where
 | hasBVars
@@ -134,7 +134,8 @@ def mkRewrite (kind : RwKind) (symm : Bool) (e : Term) (loc : Option Name)
     | .valid true (some n) => `(tactic| nth_rw $(mkNatLit n):num [$rule] $[at $loc:term]?)
     | .valid false none => `(tactic| rw! [$rule] $[at $loc:term]?)
     | .valid false (some n) =>
-      `(tactic| rw! (occs := .pos [$(mkNatLit n)]) [$rule] $[at $loc:term]?)
+      let occs ← `(optConfig| ($(mkIdent `occs):ident := .$(mkIdent `pos) [$(mkNatLit n)]))
+      `(tactic| rw! $occs [$rule] $[at $loc:term]?)
     | .hasBVars => `(tactic| simp_rw [$rule] $[at $loc:term]?)
 
 def mergeTactics? {m} [Monad m] [MonadRef m] [MonadQuotation m] (stx₁ stx₂ : Syntax) :
