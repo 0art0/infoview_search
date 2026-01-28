@@ -133,7 +133,7 @@ public structure GrwInfo where
   subExpr : Expr
   pos : SubExpr.Pos
   hyp? : Option Name
-  occ : LOption Nat
+  rwKind : RwKind
   gpos : Array GrwPos
 
 public structure GrwKey where
@@ -162,7 +162,7 @@ structure GRewrite extends GrwLemma where
   key : GrwKey
   justLemmaName : Bool
   hyp? : Option Name
-  occ : LOption Nat
+  rwKind : RwKind
 
 set_option linter.style.emptyLine false in
 /-- If `thm` can be used to rewrite `e`, return the rewrite. -/
@@ -198,7 +198,7 @@ def checkGRewrite (lem : GrwLemma) (i : GrwInfo) : MetaM GRewrite := do
   let proof ← instantiateMVars proof
   let isRefl ← isExplicitEq e replacement
   let justLemmaName ←
-    if i.occ matches .undef then pure true
+    if i.rwKind matches .hasBVars then pure true
     else withMCtx mctxOrig do kabstractFindsPositions i.rootExpr lhsOrig i.pos
   let key := {
     numGoals := extraGoals.size
@@ -209,7 +209,7 @@ def checkGRewrite (lem : GrwLemma) (i : GrwInfo) : MetaM GRewrite := do
   }
   return { lem with
     proof, replacement, extraGoals, makesNewMVars, isRefl, key, justLemmaName, hyp? := i.hyp?,
-    occ := i.occ }
+    rwKind := i.rwKind }
 
 public instance : Ord GrwKey where
   compare a b :=
@@ -230,7 +230,7 @@ def tacticSyntax (grw : GRewrite) : MetaM (TSyntax `tactic) := do
       `(term| $(mkIdent <| ← grw.name.unresolveName))
     else
       withOptions (pp.mvars.set · false) (PrettyPrinter.delab grw.proof)
-  mkRewrite grw.occ grw.symm proof grw.hyp? (grw := true)
+  mkRewrite grw.rwKind grw.symm proof grw.hyp? (grw := true)
 
 /-- Construct the `Result` from a `GRewrite`. -/
 def GRewrite.toResult (grw : GRewrite) (pasteInfo : PasteInfo) : MetaM (Result GrwKey) := do

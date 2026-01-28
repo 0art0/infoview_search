@@ -74,7 +74,7 @@ public structure RwInfo where
   subExpr : Expr
   pos : SubExpr.Pos
   hyp? : Option Name
-  occ : LOption Nat
+  rwKind : RwKind
 
 public structure RwKey where
   numGoals : Nat
@@ -103,7 +103,7 @@ structure Rewrite extends RwLemma where
   key : RwKey
   justLemmaName : Bool
   hyp? : Option Name
-  occ : LOption Nat
+  rwKind : RwKind
 
 set_option linter.style.emptyLine false in
 /-- If `thm` can be used to rewrite `e`, return the rewrite. -/
@@ -123,10 +123,10 @@ def checkRewrite (lem : RwLemma) (i : RwInfo) : MetaM Rewrite := do
   synthAppInstances `infoview_search default mvars binderInfos false false
   let mut extraGoals := #[]
   let mut justLemmaName := true
-  let mut occ := i.occ
+  let mut rwKind := i.rwKind
   for mvar in mvars, bi in binderInfos do
     unless ← mvar.mvarId!.isAssigned do
-      if ← pure (!occ matches .undef) <&&> isProof mvar <&&> mvar.mvarId!.assumptionCore then
+      if ← pure (!rwKind matches .hasBVars) <&&> isProof mvar <&&> mvar.mvarId!.assumptionCore then
         justLemmaName := false
       else
         extraGoals := extraGoals.push (mvar.mvarId!, bi)
@@ -139,11 +139,12 @@ def checkRewrite (lem : RwLemma) (i : RwInfo) : MetaM Rewrite := do
       return (type.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome
   let proof ← instantiateMVars proof
   let isRefl ← isExplicitEq e replacement
-  if !occ matches .undef && justLemmaName then
-    if ← withMCtx mctxOrig do kabstractFindsPositions i.rootExpr lhsOrig i.pos then
-      occ := .none
-    else
-      justLemmaName := false
+  if let .valid tpCorrect _ := rwKind then
+    if justLemmaName then
+      if ← withMCtx mctxOrig do kabstractFindsPositions i.rootExpr lhsOrig i.pos then
+        rwKind := .valid tpCorrect none
+      else
+        justLemmaName := false
   let key := {
     numGoals := extraGoals.size
     symm := lem.symm
@@ -153,7 +154,7 @@ def checkRewrite (lem : RwLemma) (i : RwInfo) : MetaM Rewrite := do
     replacement := ← abstractMVars replacement
   }
   return { lem with
-    proof, replacement, extraGoals, makesNewMVars, isRefl, key, justLemmaName, occ,
+    proof, replacement, extraGoals, makesNewMVars, isRefl, key, justLemmaName, rwKind,
     hyp? := i.hyp? }
 
 public instance : Ord RwKey where
@@ -176,7 +177,7 @@ def tacticSyntax (rw : Rewrite) : MetaM (TSyntax `tactic) := do
       `(term| $(mkIdent <| ← rw.name.unresolveName))
     else
       withOptions (pp.mvars.set · false) (PrettyPrinter.delab rw.proof)
-  mkRewrite rw.occ rw.symm proof rw.hyp?
+  mkRewrite rw.rwKind rw.symm proof rw.hyp?
 
 /-- Construct the `Result` from a `Rewrite`. -/
 def Rewrite.toResult (rw : Rewrite) (pasteInfo : PasteInfo) : MetaM (Result RwKey) := do

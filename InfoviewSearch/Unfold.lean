@@ -7,7 +7,6 @@ module
 
 public import InfoviewSearch.Util
 public import Mathlib.Tactic.Widget.SelectPanelUtils
-public import Mathlib.Algebra.Group.Basic
 
 /-!
 
@@ -124,22 +123,22 @@ def filteredUnfolds (e : Expr) : MetaM (Array Expr) := do
   (← unfolds e).filterM isUserFriendly
 
 /-- Return the tactic string that does the unfolding. -/
-def tacticSyntax (e eNew : Expr) (occ : LOption Nat) (hyp? : Option Name) :
+def tacticSyntax (e eNew : Expr) (rwKind : RwKind) (hyp? : Option Name) :
     MetaM (TSyntax `tactic) := do
   let e ← PrettyPrinter.delab e
   let eNew ← PrettyPrinter.delab eNew
   let fromRfl ← `(show $e = $eNew from $(mkIdent `rfl))
-  mkRewrite occ false fromRfl hyp?
+  mkRewrite rwKind false fromRfl hyp?
 
 /-- Render the unfolds of `e` as given by `filteredUnfolds`, with buttons at each suggestion
 for pasting the rewrite tactic. Return `none` when there are no unfolds. -/
-def renderUnfolds (e : Expr) (occ : LOption Nat) (hyp? : Option Name) (pasteInfo : PasteInfo) :
+def renderUnfolds (e : Expr) (rwKind : RwKind) (hyp? : Option Name) (pasteInfo : PasteInfo) :
     MetaM (Option Html) := do
   let results ← filteredUnfolds e
   if results.isEmpty then
     return none
   let htmls ← results.mapM fun unfold => do
-    let tactic ← tacticSyntax e unfold occ hyp?
+    let tactic ← tacticSyntax e unfold rwKind hyp?
     mkSuggestion tactic pasteInfo <InteractiveCode fmt={← ppExprTagged unfold}/>
   return mkListElement (startOpen := false) htmls <| .text "unfold"
 

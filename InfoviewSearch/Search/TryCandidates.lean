@@ -33,7 +33,7 @@ of sections of candidates, where each section corresponds to one kind of match w
 discrimination tree. -/
 @[inline]
 def getCandidatesAux (rootExpr subExpr : Expr) (pos : SubExpr.Pos) (gpos : Array GrwPos)
-    (occ : LOption Nat) (hyp? : Option Name) (pasteInfo : PasteInfo)
+    (rwKind : RwKind) (hyp? : Option Name) (pasteInfo : PasteInfo)
     (rw : Expr → MetaM (MatchResult RwLemma)) (grw : Expr → MetaM (MatchResult GrwLemma))
     (app : Expr → MetaM (MatchResult ApplyLemma)) (appAt : Expr → MetaM (MatchResult ApplyAtLemma))
     : MetaM (Array Candidates) := do
@@ -43,12 +43,15 @@ def getCandidatesAux (rootExpr subExpr : Expr) (pos : SubExpr.Pos) (gpos : Array
   We choose the order `grw` => `rw` => `apply(at)`. -/
   if !gpos.isEmpty then
     cands := cands ++ (← grw subExpr).elts.map fun _ ↦ (·.map <|
-      .grw { pasteInfo, rootExpr, subExpr, pos, hyp?, occ, gpos })
+      .grw { pasteInfo, rootExpr, subExpr, pos, hyp?, rwKind, gpos })
   let mut rwExpr := subExpr
   let mut rwPos := pos
   repeat
+    /- TODO: we are passing the same `rwKind` to each of these nested applications, but it is
+    certainly possible that the correct `rwKind` is not the same for all of these.
+    Though this edge case is probably very rare. -/
     cands := cands ++ (← rw rwExpr).elts.map fun _ ↦ (·.map (.rw <|
-      { pasteInfo, rootExpr, subExpr := rwExpr, pos := rwPos, hyp?, occ }))
+      { pasteInfo, rootExpr, subExpr := rwExpr, pos := rwPos, hyp?, rwKind }))
     match rwExpr with
     | .app f _ =>
       rwExpr := f
@@ -64,15 +67,15 @@ def getCandidatesAux (rootExpr subExpr : Expr) (pos : SubExpr.Pos) (gpos : Array
   return cands.foldr (init := #[]) fun _ val acc ↦ acc ++ val
 
 def getImportCandidates (rootExpr subExpr : Expr) (pos : SubExpr.Pos) (gpos : Array GrwPos)
-    (occ : LOption Nat) (hyp? : Option Name) (pasteInfo : PasteInfo) : MetaM (Array Candidates) :=
-  getCandidatesAux rootExpr subExpr pos gpos occ hyp? pasteInfo
+    (rwKind : RwKind) (hyp? : Option Name) (pasteInfo : PasteInfo) : MetaM (Array Candidates) :=
+  getCandidatesAux rootExpr subExpr pos gpos rwKind hyp? pasteInfo
     (getImportMatches rwRef) (getImportMatches grwRef)
     (getImportMatches appRef) (getImportMatches appAtRef)
 
 def getCandidates (rootExpr subExpr : Expr) (pos : SubExpr.Pos) (gpos : Array GrwPos)
-    (occ : LOption Nat) (hyp? : Option Name) (pasteInfo : PasteInfo) (pres : PreDiscrTrees) :
+    (rwKind : RwKind) (hyp? : Option Name) (pasteInfo : PasteInfo) (pres : PreDiscrTrees) :
     MetaM (Array Candidates) :=
-  getCandidatesAux rootExpr subExpr pos gpos occ hyp? pasteInfo
+  getCandidatesAux rootExpr subExpr pos gpos rwKind hyp? pasteInfo
     (getMatches pres.rw.toRefinedDiscrTree) (getMatches pres.grw.toRefinedDiscrTree)
     (getMatches pres.app.toRefinedDiscrTree) (getMatches pres.appAt.toRefinedDiscrTree)
 
@@ -140,7 +143,7 @@ public structure WidgetState where
 
 set_option linter.style.emptyLine false in
 public def initializeWidgetState (rootExpr subExpr : Expr) (pos : SubExpr.Pos)
-    (pasteInfo : PasteInfo) (occ : LOption Nat) (fvarId? : Option FVarId)
+    (pasteInfo : PasteInfo) (rwKind : RwKind) (fvarId? : Option FVarId)
     (parentDecl? : Option Name) :
     MetaM WidgetState := do
   Core.checkSystem "infoview_search"
@@ -156,18 +159,18 @@ public def initializeWidgetState (rootExpr subExpr : Expr) (pos : SubExpr.Pos)
   let pres ← computeLCtxDiscrTrees choice fvarId?
   let hyp? ← fvarId?.mapM (·.getUserName)
   Core.checkSystem "infoview_search"
-  for cand in ← getCandidates rootExpr subExpr pos gpos occ hyp? pasteInfo pres do
+  for cand in ← getCandidates rootExpr subExpr pos gpos rwKind hyp? pasteInfo pres do
     sections := sections.push (← cand.generateSuggestions .hypothesis)
 
   let pres ← computeModuleDiscrTrees choice parentDecl?
   Core.checkSystem "infoview_search"
-  for cand in ← getCandidates rootExpr subExpr pos gpos occ hyp? pasteInfo pres do
+  for cand in ← getCandidates rootExpr subExpr pos gpos rwKind hyp? pasteInfo pres do
     sections := sections.push (← cand.generateSuggestions .fromFile)
 
   Core.checkSystem "infoview_search"
   let importTask? := some <| ← EIO.asTask <| ← dropM (m := MetaM) do
     computeImportDiscrTrees choice
-    let cands ← getImportCandidates rootExpr subExpr pos gpos occ hyp? pasteInfo
+    let cands ← getImportCandidates rootExpr subExpr pos gpos rwKind hyp? pasteInfo
     cands.mapM (·.generateSuggestions .fromImport)
 
   return { sections, importTask?, header :=

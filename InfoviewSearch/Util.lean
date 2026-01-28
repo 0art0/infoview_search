@@ -11,6 +11,7 @@ public import ProofWidgets.Data.Html
 public import Mathlib.Tactic.GRewrite
 public import Mathlib.Tactic.SimpRw
 public import Mathlib.Tactic.NthRewrite
+public import Mathlib.Tactic.DepRewrite
 public import Batteries.Tactic.PermuteGoals
 
 public meta section
@@ -108,21 +109,33 @@ where
 end Meta
 
 section Syntax
+open Syntax
+
+inductive RwKind where
+| hasBVars
+| valid (motiveTypeCorrect : Bool) (occ : Option Nat)
 
 /-- Return syntax for the rewrite tactic `rw [e]`.
 When `occ` is `none`, this means that `kabstract` cannot find the expression
 due to bound variables, so in that case we fall back to `simp_rw`. -/
-def mkRewrite (occ : LOption Nat) (symm : Bool) (e : Term) (loc : Option Name)
+def mkRewrite (kind : RwKind) (symm : Bool) (e : Term) (loc : Option Name)
     (grw := false) : CoreM (TSyntax `tactic) := do
   let loc := loc.map mkIdent
   let rule ← if symm then `(Parser.Tactic.rwRule| ← $e) else `(Parser.Tactic.rwRule| $e:term)
-  match occ, grw with
-  | .some n, false => `(tactic| nth_rw $(Syntax.mkNatLit n):num [$rule] $[at $loc:term]?)
-  | .none, false => `(tactic| rw [$rule] $[at $loc:term]?)
-  | .undef, false => `(tactic| simp_rw [$rule] $[at $loc:term]?)
-  | .some n, true => `(tactic| nth_grw $(Syntax.mkNatLit n):num [$rule] $[at $loc:term]?)
-  -- We currently lack a variant of `grw` that rewrites bound variables, so we just use `grw`.
-  | _, true => `(tactic| grw [$rule] $[at $loc:term]?)
+  if grw then
+    match kind with
+    | .valid _ none => `(tactic| grw [$rule] $[at $loc:term]?)
+    | .valid _ (some n) => `(tactic| nth_grw $(mkNatLit n):num [$rule] $[at $loc:term]?)
+    -- We still lack a variant of `grw` that rewrites bound variables, so we just use `grw`.
+    | .hasBVars => `(tactic| grw [$rule] $[at $loc:term]?)
+  else
+    match kind with
+    | .valid true none => `(tactic| rw [$rule] $[at $loc:term]?)
+    | .valid true (some n) => `(tactic| nth_rw $(mkNatLit n):num [$rule] $[at $loc:term]?)
+    | .valid false none => `(tactic| rw! [$rule] $[at $loc:term]?)
+    | .valid false (some n) =>
+      `(tactic| rw! (occs := .pos [$(mkNatLit n)]) [$rule] $[at $loc:term]?)
+    | .hasBVars => `(tactic| simp_rw [$rule] $[at $loc:term]?)
 
 def mergeTactics? {m} [Monad m] [MonadRef m] [MonadQuotation m] (stx₁ stx₂ : Syntax) :
     m (Option (TSyntax `tactic)) := do
@@ -146,7 +159,7 @@ def mergeTactics? {m} [Monad m] [MonadRef m] [MonadQuotation m] (stx₁ stx₂ :
 This function respects the 100 character limit for long lines. -/
 def tacticPasteString (tac : TSyntax `tactic) (pasteInfo : PasteInfo) : CoreM String := do
   let tac ← if let some n := pasteInfo.onGoal then
-      `(tactic| on_goal $(Syntax.mkNatLit (n + 1)) => $(tac):tactic)
+      `(tactic| on_goal $(mkNatLit (n + 1)) => $(tac):tactic)
     else
       pure tac
   let column := pasteInfo.cursorPos.character

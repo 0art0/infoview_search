@@ -21,11 +21,12 @@ def render (parts : Array Html) : Html :=
     .element "div" #[] parts
 
 def viewKAbstractSubExpr' {α} (e : Expr) (pos : SubExpr.Pos)
-    (k : Expr → LOption Nat → MetaM α) : MetaM α := do
+    (k : Expr → RwKind → MetaM α) : MetaM α := do
   if let some (subExpr, occ) ← withReducible <| viewKAbstractSubExpr e pos then
-    k subExpr occ.toLOption
+    let tpCorrect ← kabstractIsTypeCorrect e subExpr pos
+    k subExpr (.valid tpCorrect occ)
   else
-    Meta.viewSubexpr (fun _ e ↦ k e .undef) pos e
+    Meta.viewSubexpr (fun _ e ↦ k e .hasBVars) pos e
 
 public def generateSuggestions (loc : SubExpr.GoalsLocation) (pasteInfo : PasteInfo)
     (parentDecl? : Option Name) (token : RefreshToken) : MetaM Unit := do
@@ -44,22 +45,17 @@ public def generateSuggestions (loc : SubExpr.GoalsLocation) (pasteInfo : PasteI
     | none => pure decl.type
   -- TODO: instead of computing the occurrences a single time (i.e. the `n` in `nth_rw n`),
   -- compute the occurrence for each suggestion separately, to avoid inaccuracies.
-  viewKAbstractSubExpr' rootExpr pos fun subExpr occ ↦ do
-  unless ← kabstractIsTypeCorrect rootExpr subExpr pos do
-    token.refresh <| .text "infoview_search: the selected expression cannot be rewritten, \
-      because the motive is not type correct. \
-      This usually occurs when trying to rewrite a term that appears as a dependent argument."
-    return
+  viewKAbstractSubExpr' rootExpr pos fun subExpr rwKind ↦ do
   let hyp? ← fvarId?.mapM (·.getUserName)
   let mut result := result
-  if let some html ← InteractiveUnfold.renderUnfolds subExpr occ hyp? pasteInfo then
+  if let some html ← InteractiveUnfold.renderUnfolds subExpr rwKind hyp? pasteInfo then
     result := result.push html
   let token' ← RefreshToken.new <| .text "searching for applicable lemmas"
   result := result.push <| <RefreshComponent state={← WithRpcRef.mk token'.ref}/>
   token.refresh (render result)
   do
     let ppSubExpr ← Widget.ppExprTagged subExpr
-    let state ← initializeWidgetState rootExpr subExpr pos pasteInfo occ fvarId? parentDecl?
+    let state ← initializeWidgetState rootExpr subExpr pos pasteInfo rwKind fvarId? parentDecl?
     state.repeatRefresh ppSubExpr token'
 
 @[server_rpc_method]
