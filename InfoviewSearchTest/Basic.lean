@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Jovan Gerbscheid. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Jovan Gerbscheid
+-/
 module
 
 import Mathlib.Order.Basic
@@ -112,7 +117,7 @@ example (h : a ≈ b) (h' : b ≈ c) : f a ≤ f c := by
 
 end AntiSymmRelTest
 
--- TODO: test for over-applications
+-- test for over-applications
 example (f g : Nat → Nat) : (f + g) 2 = f 2 + g 2 := by
   search_test "/0/1" => "rw [add_comm]\n  "
   search_test "/0/1/0" => "rw [add_comm]\n  "
