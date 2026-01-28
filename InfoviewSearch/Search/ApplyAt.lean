@@ -5,11 +5,13 @@ public import Mathlib.Tactic.ApplyAt
 
 public meta section
 
-namespace InfoviewSearch.ApplyAt
+namespace InfoviewSearch
 open Lean Meta Widget Server ProofWidgets Jsx
 
-structure ApplyAtLemma where
+structure AppAtLemma where
   name : Premise
+
+namespace ApplyAt
 
 structure ResultId where
   numGoals : Nat
@@ -20,7 +22,7 @@ structure ResultId where
 deriving Inhabited
 
 /-- A apply lemma that has been applied to an expression. -/
-structure Application extends ApplyAtLemma where
+structure Application extends AppAtLemma where
   /-- The proof of the application -/
   proof : Expr
   /-- The replacement expression obtained from the rewrite -/
@@ -34,7 +36,7 @@ structure Application extends ApplyAtLemma where
 
 set_option linter.style.emptyLine false in
 /-- If `thm` can be used to apply to `target`, return the applications. -/
-def checkApplication (lem : ApplyAtLemma) (target : Expr) (hyp : Name) :
+def checkApplication (lem : AppAtLemma) (target : Expr) (hyp : Name) :
     MetaM Application := do
   let (proof, mvars, binderInfos, replacement) ← lem.name.forallMetaTelescopeReducing
   let assume ← inferType mvars.back!
@@ -110,7 +112,7 @@ def Application.toResult (app : Application) (pasteInfo : PasteInfo) :
   return { filtered, unfiltered, info := app.info, pattern }
 
 /-- `generateSuggestion` is called in parallel for all apply lemmas. -/
-def generateSuggestion (expr : Expr) (pasteInfo : PasteInfo) (hyp : Name) (lem : ApplyAtLemma) :
+def generateSuggestion (expr : Expr) (pasteInfo : PasteInfo) (hyp : Name) (lem : AppAtLemma) :
     MetaM (Result ResultId) :=
   withReducible do withNewMCtxDepth do
   let app ← checkApplication lem expr hyp

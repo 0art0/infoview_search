@@ -57,16 +57,18 @@ Ways to extend `rw!?`:
 
 public meta section
 
-namespace InfoviewSearch.Rw
+namespace InfoviewSearch
 
 open Lean Meta
 
 /-- The structure for rewrite lemmas stored in the `RefinedDiscrTree`. -/
-structure RewriteLemma where
+structure RwLemma where
   /-- The lemma -/
   name : Premise
   /-- `symm` is `true` when rewriting from right to left -/
   symm : Bool
+
+namespace Rw
 
 structure ResultId where
   numGoals : Nat
@@ -81,7 +83,7 @@ structure ResultId where
 deriving Inhabited
 
 /-- A rewrite lemma that has been applied to an expression. -/
-structure Rewrite extends RewriteLemma where
+structure Rewrite extends RwLemma where
   /-- The proof of the rewrite -/
   proof : Expr
   /-- The replacement expression obtained from the rewrite -/
@@ -99,7 +101,7 @@ structure Rewrite extends RewriteLemma where
 
 set_option linter.style.emptyLine false in
 /-- If `thm` can be used to rewrite `e`, return the rewrite. -/
-def checkRewrite (lem : RewriteLemma) (rootExpr : Expr) (subExpr : SubExpr)
+def checkRewrite (lem : RwLemma) (rootExpr : Expr) (subExpr : SubExpr)
     (hyp? : Option Name) (occ : LOption Nat) : MetaM Rewrite := do
   let e := subExpr.expr
   let (proof, mvars, binderInfos, eqn) ← lem.name.forallMetaTelescopeReducing
@@ -199,7 +201,7 @@ def Rewrite.toResult (rw : Rewrite) (pasteInfo : PasteInfo) : MetaM (Result Resu
 
 /-- `generateSuggestion` is called in parallel for all rewrite lemmas. -/
 def generateSuggestion (rootExpr : Expr) (subExpr : SubExpr) (pasteInfo : PasteInfo)
-    (hyp? : Option Name) (occ : LOption Nat) (lem : RewriteLemma) :
+    (hyp? : Option Name) (occ : LOption Nat) (lem : RwLemma) :
     MetaM (Result ResultId) := do
   withReducible do withNewMCtxDepth do
   let rewrite ← checkRewrite lem rootExpr subExpr hyp? occ

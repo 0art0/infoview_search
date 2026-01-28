@@ -10,13 +10,13 @@ public import Mathlib.Order.Antisymmetrization
 
 public meta section
 
-namespace InfoviewSearch.Grw
+namespace InfoviewSearch
 
 open Lean Meta Mathlib.Tactic
 
 /-- `GRewritePos` contains the ìnformation about a given subexpression position needed for
 applying a  `grw` lemma. -/
-structure GRewritePos where
+structure GrwPos where
   /-- The name of the relation. -/
   relName : Name
   /-- The expression of the relation. -/
@@ -28,7 +28,7 @@ structure GRewritePos where
 /-- Given the relation that we can use to rewrite at the give position, figure out all of the
 subrelations that could be used instead. -/
 private def gcongrBackward (relName : Name) (relation : Expr) (symm : Bool) :
-    MetaM (Array GRewritePos) := do
+    MetaM (Array GrwPos) := do
   let type ← inferType relation
   let α ← mkFreshTypeMVar
   unless ← isDefEq type (.forallE `_ α (.forallE `_ α (.sort 0) .default) .default) do
@@ -40,7 +40,7 @@ private def gcongrBackward (relName : Name) (relation : Expr) (symm : Bool) :
   withNewMCtxDepth do
   -- Any relation `r` can be proved from `AntisymmRel r`, so we add this as a possible relation
   let antiSymm := mkApp2 (.const ``AntisymmRel [u]) α relation
-  let mut result : Array GRewritePos :=
+  let mut result : Array GrwPos :=
     #[{ relName := ``AntisymmRel, relation := antiSymm, symm? := none }]
   -- If `relName` is symmetric, then include the reverse as a possible relation (`symm? := none`)
   let symm? ← try
@@ -65,7 +65,7 @@ private def gcongrBackward (relName : Name) (relation : Expr) (symm : Bool) :
   | _ => pure ()
   return result
 where
-  tryApply (appName relName : Name) : MetaM (Option GRewritePos) := do
+  tryApply (appName relName : Name) : MetaM (Option GrwPos) := do
     let (mvars, bi, rel) ← forallMetaTelescope (← inferType (← mkConstWithFreshMVarLevels appName))
     try
       if ← isDefEq rel.appFn!.appFn! relation then
@@ -79,7 +79,7 @@ where
 /-- This function is passed to `MVarId.gcongr` as the main discharger.
 It doesn't try to prove the goal, but instead observes what the goal is,
 to help determine which lemmas could work with `grw`. -/
-private def dummyDischarger (ref : IO.Ref (Array GRewritePos)) (hyp? : Bool) (fvar : Expr)
+private def dummyDischarger (ref : IO.Ref (Array GrwPos)) (hyp? : Bool) (fvar : Expr)
     (goal : MVarId) : MetaM Bool := do
   let relation ← instantiateMVars (← goal.getType)
   let e@(mkApp2 relation lhs rhs) := relation | throw <| .error default "dummyError"
@@ -96,8 +96,7 @@ private def dummyDischarger (ref : IO.Ref (Array GRewritePos)) (hyp? : Bool) (fv
   throw <| .error default "dummyError"
 
 /-- Determine possible ways in which a `grw` call could rewrite at the given subexpression. -/
-def getGRewritePos? (rootExpr : Expr) (subExpr : SubExpr) (hyp? : Bool) :
-    MetaM (Array GRewritePos) := do
+def getGrwPos? (rootExpr : Expr) (subExpr : SubExpr) (hyp? : Bool) : MetaM (Array GrwPos) := do
   withLocalDeclD `_a (← inferType subExpr.expr) fun fvar => do
   let root' ← replaceSubexpr (fun _ => pure (GCongr.mkHoleAnnotation fvar)) subExpr.pos rootExpr
   let imp := Expr.forallE `_a rootExpr root' .default
@@ -119,13 +118,15 @@ def getGRewritePos? (rootExpr : Expr) (subExpr : SubExpr) (hyp? : Bool) :
 
 
 /-- The structure for rewrite lemmas stored in the `RefinedDiscrTree`. -/
-structure GRewriteLemma where
+structure GrwLemma where
   /-- The lemma -/
   name : Premise
   /-- `symm` is `true` when rewriting from right to left -/
   symm : Bool
   /-- `relName` is the relation of the lemma. -/
   relName : Name
+
+namespace Grw
 
 structure ResultId where
   numGoals : Nat
@@ -139,7 +140,7 @@ structure ResultId where
 deriving Inhabited
 
 /-- A rewrite lemma that has been applied to an expression. -/
-structure GRewrite extends GRewriteLemma where
+structure GRewrite extends GrwLemma where
   /-- The proof of the rewrite -/
   proof : Expr
   /-- The replacement expression obtained from the rewrite -/
@@ -157,8 +158,8 @@ structure GRewrite extends GRewriteLemma where
 
 set_option linter.style.emptyLine false in
 /-- If `thm` can be used to rewrite `e`, return the rewrite. -/
-def checkGRewrite (lem : GRewriteLemma) (rootExpr : Expr) (subExpr : SubExpr)
-    (pos : Array GRewritePos) (hyp? : Option Name) (occ : LOption Nat) : MetaM GRewrite := do
+def checkGRewrite (lem : GrwLemma) (rootExpr : Expr) (subExpr : SubExpr)
+    (pos : Array GrwPos) (hyp? : Option Name) (occ : LOption Nat) : MetaM GRewrite := do
   let mctx ← getMCtx
   (·.getDM do throwError "no suitable `grw` relation was found") =<< pos.findSomeM? fun pos ↦ do
   unless lem.relName == pos.relName && pos.symm?.all (· == lem.symm) do return none
@@ -253,7 +254,7 @@ def GRewrite.toResult (grw : GRewrite) (pasteInfo : PasteInfo) : MetaM (Result R
 
 /-- `generateSuggestion` is called in parallel for all rewrite lemmas. -/
 def generateSuggestion (rootExpr : Expr) (subExpr : SubExpr) (pasteInfo : PasteInfo)
-    (gpos : Array GRewritePos) (hyp? : Option Name) (occ : LOption Nat) (lem : GRewriteLemma) :
+    (gpos : Array GrwPos) (hyp? : Option Name) (occ : LOption Nat) (lem : GrwLemma) :
     MetaM (Result ResultId) := do
   withReducible do withNewMCtxDepth do
   let rewrite ← checkGRewrite lem rootExpr subExpr gpos hyp? occ

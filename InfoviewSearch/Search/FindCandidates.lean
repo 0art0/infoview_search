@@ -34,7 +34,7 @@ being computed on various parallel threads.
 meta section
 
 namespace InfoviewSearch
-open Lean Meta RefinedDiscrTree Rw Grw Apply ApplyAt
+open Lean Meta RefinedDiscrTree
 
 /-- Return `true` if `s` and `t` are equal up to swapping the `MVarId`s. -/
 def isMVarSwap (t s : Expr) : Bool :=
@@ -74,10 +74,10 @@ where
 
 
 structure Entries where
-  rw : Array (Key × LazyEntry × RewriteLemma) := #[]
-  grw : Array (Key × LazyEntry × GRewriteLemma) := #[]
-  app : Array (Key × LazyEntry × ApplyLemma) := #[]
-  appAt : Array (Key × LazyEntry × ApplyAtLemma) := #[]
+  rw : Array (Key × LazyEntry × RwLemma) := #[]
+  grw : Array (Key × LazyEntry × GrwLemma) := #[]
+  app : Array (Key × LazyEntry × AppLemma) := #[]
+  appAt : Array (Key × LazyEntry × AppAtLemma) := #[]
 
 def insertEntry {α} (arr : Array (Key × LazyEntry × α)) (key : Expr) (a : α) :
     MetaM (Array (Key × LazyEntry × α)) := do
@@ -165,10 +165,10 @@ def Entries.addVar (choice : Choice) (entries : Entries) (decl : LocalDecl) : Me
   return { rw, grw, app, appAt }
 
 public structure PreDiscrTrees where
-  rw : PreDiscrTree RewriteLemma    := {}
-  grw : PreDiscrTree GRewriteLemma  := {}
-  app : PreDiscrTree ApplyLemma     := {}
-  appAt : PreDiscrTree ApplyAtLemma := {}
+  rw : PreDiscrTree RwLemma := {}
+  grw : PreDiscrTree GrwLemma := {}
+  app : PreDiscrTree AppLemma := {}
+  appAt : PreDiscrTree AppAtLemma := {}
 
 def PreDiscrTrees.append (pres : PreDiscrTrees) (maps : Entries) : PreDiscrTrees where
   rw := maps.rw.foldl (init := pres.rw) fun pre (key, e) ↦ pre.push key e
@@ -176,13 +176,13 @@ def PreDiscrTrees.append (pres : PreDiscrTrees) (maps : Entries) : PreDiscrTrees
   app := maps.app.foldl (init := pres.app) fun pre (key, e) ↦ pre.push key e
   appAt := maps.appAt.foldl (init := pres.appAt) fun pre (key, e) ↦ pre.push key e
 
-public initialize rwRef : IO.Ref (Option (Task (Option (RefinedDiscrTree RewriteLemma)))) ←
+public initialize rwRef : IO.Ref (Option (Task (Option (RefinedDiscrTree RwLemma)))) ←
   IO.mkRef none
-public initialize grwRef : IO.Ref (Option (Task (Option (RefinedDiscrTree GRewriteLemma)))) ←
+public initialize grwRef : IO.Ref (Option (Task (Option (RefinedDiscrTree GrwLemma)))) ←
   IO.mkRef none
-public initialize appRef : IO.Ref (Option (Task (Option (RefinedDiscrTree ApplyLemma)))) ←
+public initialize appRef : IO.Ref (Option (Task (Option (RefinedDiscrTree AppLemma)))) ←
   IO.mkRef none
-public initialize appAtRef : IO.Ref (Option (Task (Option (RefinedDiscrTree ApplyAtLemma)))) ←
+public initialize appAtRef : IO.Ref (Option (Task (Option (RefinedDiscrTree AppAtLemma)))) ←
   IO.mkRef none
 
 def setRefIfNone {α} [Nonempty α] (ref : IO.Ref (Option (Task (Option α)))) :

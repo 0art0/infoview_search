@@ -4,11 +4,13 @@ public import InfoviewSearch.Search.SectionState
 
 public meta section
 
-namespace InfoviewSearch.Apply
+namespace InfoviewSearch
 open Lean Meta Widget Server ProofWidgets Jsx
 
-structure ApplyLemma where
+structure AppLemma where
   name : Premise
+
+namespace Apply
 
 structure ResultId where
   numGoals : Nat
@@ -32,7 +34,7 @@ def ResultId.isDuplicate (a b : ResultId) : MetaM Bool :=
       <&&> isExplicitEq a.newGoals[i]!.expr b.newGoals[i]!.expr
 
 /-- A apply lemma that has been applied to an expression. -/
-structure Application extends ApplyLemma where
+structure Application extends AppLemma where
   /-- The proof of the application -/
   proof : Expr
   /-- The extra goals created by the application -/
@@ -51,7 +53,7 @@ def tacticSyntax (proof : Expr) (useExact : Bool) : MetaM (TSyntax `tactic) := d
 
 set_option linter.style.emptyLine false in
 /-- If `thm` can be used to apply to `target`, return the applications. -/
-def checkApplication (lem : ApplyLemma) (target : Expr) : MetaM Application := do
+def checkApplication (lem : AppLemma) (target : Expr) : MetaM Application := do
   let (proof, mvars, binderInfos, e) ← lem.name.forallMetaTelescopeReducing
   unless ← isDefEq e target do throwError "{e} does not unify with {target}"
   synthAppInstances `infoview_search default mvars binderInfos false false
@@ -99,7 +101,7 @@ def Application.toResult (app : Application) (pasteInfo : PasteInfo) :
   return { filtered, unfiltered, info := app.info, pattern }
 
 /-- `generateSuggestion` is called in parallel for all apply lemmas. -/
-def generateSuggestion (expr : Expr) (pasteInfo : PasteInfo) (lem : ApplyLemma) :
+def generateSuggestion (expr : Expr) (pasteInfo : PasteInfo) (lem : AppLemma) :
     MetaM (Result ResultId) :=
   withReducible do withNewMCtxDepth do
   let app ← checkApplication lem expr
