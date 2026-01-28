@@ -190,7 +190,7 @@ def Rewrite.toResult (rw : Rewrite) (pasteInfo : PasteInfo) : MetaM (Result Resu
       some <$> mkSuggestion tactic pasteInfo (.element "div" #[] htmls)
     else
       pure none
-  htmls := htmls.push (← rw.name.toHtml)
+  htmls := htmls.push (<div> {← rw.name.toHtml} </div>)
   let unfiltered ← mkSuggestion tactic pasteInfo (.element "div" #[] htmls)
   let pattern ← forallTelescopeReducing (← rw.name.getType) fun _ e => do
     let mkApp2 _ lhs rhs ← whnf e | throwError "Expected equation, not{indentExpr e}"

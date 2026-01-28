@@ -23,7 +23,7 @@ axiom test_sorry {α : Sort*} : α
 
 variable (n m k : Nat)
 
-example : n = n + 0 := by
+example (h : 0 + n = n) : n = n + 0 := by
   search_test "/1" =>
     "rw [show n + 0 = n from rfl]\n  "
     "rw [Nat.add_zero]\n  "
@@ -31,6 +31,8 @@ example : n = n + 0 := by
     "rfl\n  "
     "rw [Nat.left_eq_add]\n  "
     "refine Nat.dvd_antisymm ?_ ?_\n  "
+  search_test h "" => "apply Nat.le.intro at h\n  " "rw [← Nat.beq_eq] at h\n  "
+  search_test h "/0/1" => "rw [Nat.add_comm] at h\n  "
   rfl
 
 example : n - 3 ≤ m - 3 := by
@@ -109,6 +111,10 @@ example (h : a ≈ b) (h' : b ≈ c) : f a ≤ f c := by
   grw [h']
 
 end AntiSymmRelTest
+
+-- TODO: test for over-applications
+example (f g : Nat → Nat) : (f + g) 2 = f 2 + g 2 := by
+  exact test_sorry
 
 /-
 TODO: add tests for

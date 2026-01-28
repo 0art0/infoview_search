@@ -103,7 +103,7 @@ def Application.toResult (app : Application) (pasteInfo : PasteInfo) :
       some <$> mkSuggestion tactic pasteInfo (.element "div" #[] htmls)
     else
       pure none
-  htmls := htmls.push (← app.name.toHtml)
+  htmls := htmls.push (<div> {← app.name.toHtml} </div>)
   let unfiltered ← mkSuggestion tactic pasteInfo (.element "div" #[] htmls)
   let pattern ← forallTelescopeReducing (← app.name.getType) fun xs _ => do
     ppExprTagged (← inferType xs.back!)

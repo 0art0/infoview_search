@@ -108,7 +108,7 @@ def getGRewritePos? (rootExpr : Expr) (subExpr : SubExpr) (hyp? : Bool) :
       (mainGoalDischarger := dummyDischarger ref hyp? fvar))
   catch ex =>
     if (← ex.toMessageData.toString) != "dummyError" then
-      throw ex
+      return #[]
   let result ← ref.get
   /- I am not entirely sure if this can come up in practice, but we check that the relation
   that was found doesn't contain any free variables that are now out of scope. -/
@@ -243,7 +243,7 @@ def GRewrite.toResult (grw : GRewrite) (pasteInfo : PasteInfo) : MetaM (Result R
       some <$> mkSuggestion tactic pasteInfo (.element "div" #[] htmls)
     else
       pure none
-  htmls := htmls.push (← grw.name.toHtml)
+  htmls := htmls.push (<div> {← grw.name.toHtml} </div>)
   let unfiltered ← mkSuggestion tactic pasteInfo (.element "div" #[] htmls)
   let pattern ← forallTelescopeReducing (← grw.name.getType) fun _ e => do
     let mkApp2 _ lhs rhs := (← instantiateMVars e).cleanupAnnotations
