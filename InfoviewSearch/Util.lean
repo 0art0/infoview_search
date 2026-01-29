@@ -71,7 +71,7 @@ structure PasteInfo where
   In infoview mode, the start and end of the range should both be the cursor position. -/
   cursorPos : Lsp.Position
   /-- Whether to use the `on_goal n =>` combinator. -/
-  onGoal : Option Nat
+  onGoal : Option Nat := none
   /-- The preceding piece of syntax. This is used for merging consecutive `rw` tactics. -/
   stx : Syntax
 
