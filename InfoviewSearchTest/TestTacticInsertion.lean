@@ -5,13 +5,22 @@ public import InfoviewSearch.Util
 
 open Lean Elab Command Meta Tactic Server InfoviewSearch
 
-deriving instance Repr for ElabInfo
+private meta def String.Pos.Raw.toPos (offset : String.Pos.Raw) (s : String) : s.Pos :=
+  if hValid : offset.IsValid s then ⟨offset, hValid⟩ else s.endPos
 
-public meta def testTacticInsertionLogic {M}
-    [Monad M] [MonadLiftT IO M] [MonadRef M] [MonadQuotation M]
-    (fileContents : String) (cursorPos : Lsp.Position)
-    (tactic : TSyntax `tactic) (expectedOutput : String)
-    (tacticInsertionLogic : TSyntax `tactic → PasteInfo → M Lsp.TextEdit) : M Bool := do
+private meta def String.editText (file newText : String) (range : Lean.Syntax.Range) : String :=
+    file.extract file.startPos (range.start.toPos file)
+    ++ newText ++
+    file.extract (range.stop.toPos file) file.endPos
+
+private meta def String.highlightCursor (file : String) (cursorPos : String.Pos.Raw) : String :=
+  file.editText "∣" ⟨cursorPos, cursorPos⟩
+
+public meta def testTacticInsertionLogic {M} [Monad M] [MonadLiftT IO M]
+    [MonadRef M] [MonadLog M] [AddMessageContext M] [MonadOptions M] [MonadQuotation M]
+    (fileContents : String) (cursorPos : Lsp.Position) (tactic : M (TSyntax `tactic))
+    (tacticInsertionLogic : TSyntax `tactic → PasteInfo → M Lsp.TextEdit)
+    : M Unit := do
   -- Parse the header of the provided file
   let context := Parser.mkInputContext fileContents (fileName := "test.lean")
   let (header, state, messages) ← Parser.parseHeader context
@@ -25,20 +34,26 @@ public meta def testTacticInsertionLogic {M}
   if h : goalsAt.length = 0 then -- TODO: Use `goalsAt.isEmpty` instead
     IO.throwServerError "No goals found at the given position"
   else
-    IO.println goalsAt.length
+    logInfo <| .trace { cls := `TestTacticInsertion, collapsed := false }
+      "Number of goals at result"
+      #[m!"{goalsAt.length}"]
+    logInfo <| .trace { cls := `TestTacticInsertion } m!"Cursor position"
+      #[fileContents.highlightCursor (text.lspPosToUtf8Pos cursorPos)]
     let nearestGoalsAt := goalsAt[0]
     let pasteInfo : PasteInfo := {
       «meta» := { (default : DocumentMeta) with text }
       cursorPos, stx := nearestGoalsAt.tacticInfo.stx }
-    let { range, newText, .. } ← tacticInsertionLogic tactic pasteInfo
-    return editText fileContents (text.lspRangeToUtf8Range range) newText == expectedOutput
-where
-  editText (file : String) (range : Lean.Syntax.Range) (newText : String) : String :=
-    let startPos : file.Pos :=
-      if hValid : range.start.IsValid file then ⟨range.start, hValid⟩ else file.endPos
-    let endPos : file.Pos :=
-      if hValid : range.stop.IsValid file then ⟨range.stop, hValid⟩ else file.endPos
-    file.extract file.startPos startPos ++ newText ++ file.extract endPos file.endPos
+    let { range, newText, .. } ← tacticInsertionLogic (← tactic) pasteInfo
+    let utf8Range := text.lspRangeToUtf8Range range
+    logInfo <| .trace { cls := `TestTacticInsertion } m!"Edit details"
+      #[m!"Range: {range.start}-{range.end}",
+        m!"UTF-8 Range: {utf8Range.start}-{utf8Range.stop}",
+        m!"New text: {newText}"]
+    let outputFileContents := fileContents.editText newText utf8Range
+    logInfo <| .trace { cls := `TestTacticInsertion } m!"Resulting file contents"
+      #[outputFileContents.highlightCursor ⟨utf8Range.start.byteIdx + newText.utf8ByteSize⟩]
+
+section Test
 
 private def testFile : String :=
 "import Lean
@@ -50,20 +65,39 @@ example : 1 + 1 = 2 := by
   skip
   "
 
-private def testFile.expectedOutput : String :=
-"import Lean
-
-open Lean Elab Command Meta Tactic
-
-example : 1 + 1 = 2 := by
-  skip
-  skip
-  simp
-  "
-
-#eval show CoreM _ from do
-  testTacticInsertionLogic
-    testFile { line := 7, character := 6 }
-    (← `(tactic| simp))
-    testFile.expectedOutput
+/--
+trace: [TestTacticInsertion] Number of goals at result
+  1
+---
+trace: [TestTacticInsertion] Cursor position
+  import Lean
+  ⏎
+  open Lean Elab Command Meta Tactic
+  ⏎
+  example : 1 + 1 = 2 := by
+    skip
+    skip
+    ∣
+---
+trace: [TestTacticInsertion] Edit details
+  Range: (6, 6)-(6, 6)
+  UTF-8 Range: 88-88
+  New text: ⏎
+    simp
+---
+trace: [TestTacticInsertion] Resulting file contents
+  import Lean
+  ⏎
+  open Lean Elab Command Meta Tactic
+  ⏎
+  example : 1 + 1 = 2 := by
+    skip
+    skip
+    simp∣
+-/
+#guard_msgs in
+#eval testTacticInsertionLogic (M := CoreM)
+    testFile { line := 7, character := 4 } `(tactic| simp)
     createTacticInsertionEdit
+
+end Test
