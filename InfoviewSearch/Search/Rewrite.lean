@@ -134,14 +134,12 @@ def RwLemma.generateSuggestion (i : RwInfo) (lem : RwLemma) : MetaM (Result RwKe
       if ← pure (rwKind matches .valid ..) <&&> isProof mvar <&&> mvar.mvarId!.assumptionCore then
         justLemmaName := false
       else
-        extraGoals := extraGoals.push (mvar.mvarId!, bi)
+        extraGoals := extraGoals.push (← instantiateMVars (← inferType mvar), bi)
 
   let replacement ← instantiateMVars rhs
-  let makesNewMVars ←
-    pure (replacement.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome <||>
-    extraGoals.anyM fun goal ↦ do
-      let type ← instantiateMVars <| ← goal.1.getType
-      return (type.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome
+  let makesNewMVars :=
+    (replacement.findMVar? (mvars.contains <| .mvar ·)).isSome ||
+    extraGoals.any fun goal ↦ (goal.1.findMVar? (mvars.contains <| .mvar ·)).isSome
   let proof ← instantiateMVars proof
   let isRefl ← isExplicitEq e replacement
   if let .valid tpCorrect _ := rwKind then
@@ -166,7 +164,7 @@ def RwLemma.generateSuggestion (i : RwInfo) (lem : RwLemma) : MetaM (Result RwKe
     -- Are there lemmas where a hypothesis is marked as implicit,
     -- which we would still want to show as a new goal?
     if bi.isExplicit then
-      explicitGoals := explicitGoals.push (← ppExprTagged (← mvarId.getType))
+      explicitGoals := explicitGoals.push (← ppExprTagged mvarId)
   let mut htmls := #[<InteractiveCode fmt={replacementString}/>]
   for extraGoal in explicitGoals do
     htmls := htmls.push

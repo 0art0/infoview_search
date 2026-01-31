@@ -59,19 +59,18 @@ def ApplyLemma.generateSuggestion (i : ApplyInfo) (lem : ApplyLemma) :
   let mut newGoals := #[]
   for mvar in mvars, bi in binderInfos do
     unless ← mvar.mvarId!.isAssigned do
-      newGoals := newGoals.push (mvar.mvarId!, bi)
+      newGoals := newGoals.push (← instantiateMVars (← inferType mvar), bi)
 
-  let makesNewMVars ← newGoals.anyM fun goal => do
-    let type ← instantiateMVars <| ← goal.1.getType
-    return (type.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome
+  let makesNewMVars := newGoals.any fun goal =>
+    (goal.1.findMVar? (mvars.contains <| .mvar ·)).isSome
   let proof ← instantiateMVars proof
   let key := {
     numGoals := newGoals.size
     nameLenght := lem.name.length
     replacementSize := ← newGoals.foldlM (init := 0) fun s g =>
-      return (← ppExpr (← g.1.getType)).pretty.length + s
+      return (← ppExpr g.1).pretty.length + s
     name := lem.name.toString
-    newGoals := ← newGoals.mapM fun g => do abstractMVars (← g.1.getType)
+    newGoals := ← newGoals.mapM (abstractMVars ·.1)
   }
   let tactic ← tacticSyntax proof newGoals.isEmpty
   let mut explicitGoals := #[]
@@ -80,7 +79,7 @@ def ApplyLemma.generateSuggestion (i : ApplyInfo) (lem : ApplyLemma) :
     -- Are there lemmas where a hypothesis is marked as implicit,
     -- which we would still want to show as a new goal?
     if bi.isExplicit then
-      explicitGoals := explicitGoals.push (← ppExprTagged (← mvarId.getType))
+      explicitGoals := explicitGoals.push (← ppExprTagged mvarId)
   let htmls := if explicitGoals.isEmpty then #[.text "Goal accomplished! 🎉"] else
     explicitGoals.map
         (<div> <strong className="goal-vdash">⊢ </strong> <InteractiveCode fmt={·}/> </div>)
