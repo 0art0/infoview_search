@@ -10,6 +10,7 @@ public import InfoviewSearch.Search.GRewrite
 public import InfoviewSearch.Search.Apply
 public import InfoviewSearch.Search.ApplyAt
 public meta import InfoviewSearch.Search.FoldEnv
+public meta import InfoviewSearch.Search.RefinedDiscrTreeLookup
 public meta import Mathlib.Lean.Meta.RefinedDiscrTree
 
 /-!
@@ -106,6 +107,8 @@ public structure Choice where
   grw : Bool
   app : Bool
   appAt : Bool
+
+def Choice.any (c : Choice) : Bool := c.rw || c.grw || c.app || c.appAt
 
 /-- Given a constant, compute what needs to be added to the various discrimination trees. -/
 def Entries.addConst (choice : Choice) (entries : Entries) (name : Name) (cinfo : ConstantInfo) :
@@ -212,6 +215,7 @@ public def computeImportDiscrTrees (choice : Choice) : CoreM Unit := do
     app := appProm?.isSome
     appAt := appAtProm?.isSome
   }
+  unless choice.any do return
   let (tasks, errors) ← foldEnv {} (Entries.addConst choice) 5000
   let pre : PreDiscrTrees := tasks.foldl (·.append ·.get) {}
   rwProm?.forM (·.resolve pre.rw.toRefinedDiscrTree)
@@ -239,21 +243,20 @@ public def computeLCtxDiscrTrees (choice : Choice) (fvarId? : Option FVarId) :
 
 public partial def getImportMatches {α} (ref : IO.Ref (Option (Task (Option (RefinedDiscrTree α)))))
     (e : Expr) : MetaM (MatchResult α) := do
-  let promise ← IO.Promise.new
-  let some tree ← ref.swap (some promise.result?) |
+  let some tree ← unsafe ref.take |
+    ref.set none
     throwError "Internal infoview_search error: the discrimination tree was not computed"
+  let promise ← IO.Promise.new
+  ref.set promise.result?
   let some tree := tree.get |
     -- This happens if the reference to the promise was dropped, which should never happen.
     (panic! "reference to discr tree promise was dropped" : BaseIO Unit)
     ref.set none
     computeImportDiscrTrees { rw := true, grw := true, app := true, appAt := true }
     getImportMatches ref e
-  let (candidates, tree) ← getMatch tree e false false
-  promise.resolve tree
-  MonadExcept.ofExcept candidates
+  getMatchFinally tree e false false (promise.resolve ·)
 
 public def getMatches {α} (tree : RefinedDiscrTree α) (e : Expr) : MetaM (MatchResult α) := do
-  let (candidates, _) ← getMatch tree e false false
-  MonadExcept.ofExcept candidates
+  getMatch' tree e false false
 
 end InfoviewSearch

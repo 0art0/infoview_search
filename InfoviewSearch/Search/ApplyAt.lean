@@ -60,32 +60,30 @@ def ApplyAtLemma.generateSuggestion (lem : ApplyAtLemma) (i : ApplyAtInfo) :
   let mut newGoals := #[]
   for mvar in mvars, bi in binderInfos do
     unless ← mvar.mvarId!.isAssigned do
-      newGoals := newGoals.push (mvar.mvarId!, bi)
+      newGoals := newGoals.push (← instantiateMVars (← inferType mvar), bi)
 
   let replacement ← instantiateMVars replacement
-  let makesNewMVars ←
-    pure (replacement.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome <||>
-    newGoals.anyM fun goal ↦ do
-      let type ← instantiateMVars <| ← goal.1.getType
-      return (type.findMVar? fun mvarId => mvars.any (·.mvarId! == mvarId)).isSome
+  let makesNewMVars :=
+    (replacement.findMVar? (mvars.contains <| .mvar ·)).isSome ||
+    newGoals.any fun goal ↦ (goal.1.findMVar? (mvars.contains <| .mvar ·)).isSome
   -- let proof ← instantiateMVars proof
   let key := {
     numGoals := newGoals.size
     nameLenght := lem.name.length
     replacementSize := ← newGoals.foldlM (init := 0) fun s g =>
-      return (← ppExpr (← g.1.getType)).pretty.length + s
+      return (← ppExpr g.1).pretty.length + s
     name := lem.name.toString
-    newGoals := ← newGoals.mapM fun g => do abstractMVars (← g.1.getType)
+    newGoals := (← newGoals.mapM (abstractMVars ·.1)).push (← abstractMVars replacement)
   }
   let tactic ← tacticSyntax lem i
   let replacement ← ppExprTagged replacement
   let mut explicitGoals := #[]
-  for (mvarId, bi) in newGoals do
+  for (goal, bi) in newGoals do
     -- TODO: think more carefully about which goals should be displayed
     -- Are there lemmas where a hypothesis is marked as implicit,
     -- which we would still want to show as a new goal?
     if bi.isExplicit then
-      explicitGoals := explicitGoals.push (← ppExprTagged (← mvarId.getType))
+      explicitGoals := explicitGoals.push (← ppExprTagged goal)
   let mut htmls := #[<InteractiveCode fmt={replacement}/>]
   for newGoal in explicitGoals do
     htmls := htmls.push
