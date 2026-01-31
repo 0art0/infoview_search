@@ -177,8 +177,8 @@ def createTacticInsertionEdit (tac : TSyntax `tactic) (pasteInfo : PasteInfo) :
   let singleTactic ← tacticPasteString tac pasteInfo
   if let some range := pasteInfo.stx.getRange? then
       let text := pasteInfo.meta.text
+      let endPos := max (text.lspPosToUtf8Pos pasteInfo.cursorPos) range.stop
       if let some tac ← mergeTactics? pasteInfo.stx tac then
-        let endPos := max (text.lspPosToUtf8Pos pasteInfo.cursorPos) range.stop
         let extraWhitespace := range.stop.extract text.source endPos
         let tactic ← tacticPasteString tac pasteInfo
         return {  newText := tactic ++ extraWhitespace,
@@ -186,7 +186,7 @@ def createTacticInsertionEdit (tac : TSyntax `tactic) (pasteInfo : PasteInfo) :
       else
         let indent := text.utf8PosToLspPos range.start |>.character
         return {  newText := s!"\n{String.replicate indent ' '}{singleTactic}",
-                  range   := text.utf8RangeToLspRange ⟨range.stop, range.stop⟩  }
+                  range   := text.utf8RangeToLspRange ⟨range.stop, endPos⟩  }
     return {  newText := s!"{singleTactic}\n{String.replicate pasteInfo.cursorPos.character ' '}",
               range   := ⟨pasteInfo.cursorPos, pasteInfo.cursorPos⟩  }
 
